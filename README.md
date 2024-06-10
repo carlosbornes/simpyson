@@ -19,7 +19,7 @@ SimPYson tries to combine Simpson NMR simulation and the versatility of Python, 
 We are actively working on developing these features and plan to release the package soon. In the meantime, you can utilize the existing ``read_spe`` and ``read_fid`` functions to read and analyze NMR data from SIMPSON spectra. Here is an example code snippet:
 
 ```python
-from simpyson.io import read_spe
+from simpyson.io import read_spe, read_fid
 import matplotlib.pyplot as plt
 
 # Read data from the SPE file
