@@ -26,10 +26,16 @@ import matplotlib.pyplot as plt
 spectrum = read_spe('ouput.spe')
 fid = read_fid('output.fid')
 
+# If B0 and nucleus are provided Simpyson calculates ppm scale automatically
+spectrum_ppm = read_spe('ouput.spe', b0='800MHz', nucleus='13C')
+
 # Plot the data
 plt.plot(data['hz'], data['real'])
 plt.xlabel('Frequency (Hz)')
 
 plt.plot(fid['time'], data['real'])
 plt.xlabel('Time (ms)')
+
+plt.plot(data['ppm'], data['real'])
+plt.xlabel('$^{13}$C (ppm)')
 ```
