@@ -222,3 +222,61 @@ def get_dipcoup(filename, atom_i=None, atom_j=None, isotopes=None, self_coupling
 
     return dipcoup
 
+# Convert FID to SPE
+
+def fid_to_spe(fid: dict, b0=None, nucleus=None):
+    """
+    This function converts a FID to a SPE dictionary
+
+    Args:
+        FID (dict): dictionary returned by read_fid.
+
+    Returns:
+        dict: A dictionary containing the following keys:
+        real (numpy.ndarray): Real part of the NMR data.
+        img (numpy.ndarray): Imaginary part of the NMR data.
+        np (int): Number of data points.
+        sw (float): Spectral width (Hz).
+        hz (numpy.ndarray): NMR frequencies (Hz).
+        ppm (numpy.ndarray): NMR frequencies (ppm).
+    """
+
+    np = fid['np']
+    sw = fid['sw']
+    raw_signal = fid['real'] + 1j * fid['img']
+    signal = np.fft.fftshift(np.fft.fft(raw_signal))
+    real = np.real(signal)
+    img = np.imag(signal)
+    hz = np.linspace(-sw/2, sw/2, np)
+    dict = {'real': real, 'img': img, 'np': np, 'sw': sw, 'hz': hz}
+
+    if b0 is not None and nucleus is not None:
+        dir = os.path.dirname(os.path.realpath(__file__))
+        isotope_file = os.path.join(dir, 'isotope_data.json')
+
+        isotope = int(''.join(filter(str.isdigit, nucleus)))
+        element = ''.join(filter(str.isalpha, nucleus))
+        b0_unit = ''.join(filter(str.isalpha, b0)).lower()
+
+        # Get the gyromagnetic ratio from isotope_data.json
+        with open(isotope_file) as f:
+            data = json.load(f)
+            if element in gamma:
+                gamma = data[element][str(isotope)]['Gamma']
+            else:
+                raise ValueError('Nucleus not found.')
+
+        if b0_unit == 't':
+            b0 = int(''.join(filter(str.isdigit, b0)))
+            ppm = hz / (b0 * gamma)
+        elif b0_unit == 'mhz':  
+            # Convert from 1H MHz to MHz of the nucleus
+            b0 = int(''.join(filter(str.isdigit, b0)))
+            gamma_h = data['H']['1']['Gamma']
+            ppm = hz / (b0/(gamma_h/gamma))
+        else:
+            raise ValueError('B0 unit must be T or MHz.')
+        
+        dict['ppm'] = ppm
+
+    return dict
