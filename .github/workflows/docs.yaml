@@ -30,10 +30,15 @@ jobs:
         run: |
           pip install uv
           pip install mknotebooks
-          uv pip install --system .[docs]
+          uv pip install --system "quacc[docs] @ ."
 
       - name: Build docs
-        run: mkdocs build
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            mkdocs build --strict
+          else
+            mkdocs build
+          fi
         id: build_docs
 
       - name: Rebuild and deploy docs
