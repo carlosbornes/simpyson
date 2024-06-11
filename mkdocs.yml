@@ -5,14 +5,14 @@ site_description: >-
 nav:
   - Home: index.md
   - Installation:
-      - docs/installation/install.md
+      - installation/install.md
   - User Guide:
-      - docs/user_guide/read_files.ipynb
+      - user_guide/read_files.ipynb
   - Code Documentation: reference/
   - About:
-      - docs/about/changelog.md
-      - docs/about/conduct.md
-      - docs/about/license.md
+      - about/changelog.md
+      - about/conduct.md
+      - about/license.md
 
 repo_url: https://github.com/carlosbornes/simpyson/
 edit_uri: blob/main/docs/
