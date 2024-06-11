@@ -30,7 +30,7 @@ jobs:
         run: |
           pip install uv
           pip install mknotebooks
-          uv pip install --system "quacc[docs] @ ."
+          uv pip install --system "simpyson[docs] @ ."
 
       - name: Build docs
         run: |
