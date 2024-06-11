@@ -29,6 +29,7 @@ jobs:
       - name: Install pip packages
         run: |
           pip install uv
+          pip install mknotebooks
           uv pip install --system .[docs]
 
       - name: Build docs
