@@ -1,37 +1,18 @@
 site_name: simpyson
-site_author: YourName
+site_author: Carlos Bornes
 site_description: >-
-  This is the simpyson package!
+  SimPYson is a Pythonic interface for SIMPSON.
 nav:
   - Home: index.md
-  - Overview:
-      - example_docs/intro/why.md
-      - example_docs/intro/resources.md
-  - Setup:
-      - example_docs/setup/prep.md
-      - example_docs/setup/name.md
-      - example_docs/setup/basics.md
   - Installation:
-      - example_docs/installation/pyproject.md
-      - example_docs/installation/install.md
-  - Code:
-      - example_docs/code/source.md
-      - example_docs/code/hints.md
-      - example_docs/code/tests.md
-  - Documentation:
-      - example_docs/mkdocs/docs.md
-      - example_docs/mkdocs/build.md
-  - GitHub and CI:
-      - example_docs/github/commits.md
-      - example_docs/github/workflows.md
-  - Miscellaneous:
-      - example_docs/other/linting.md
-      - example_docs/other/apps.md
-  - Code Documentation: reference/ # keep me!
+      - docs/installation/install.md
+  - User Guide:
+      - docs/user_guide/read_files.ipynb
+  - Code Documentation: reference/
   - About:
-      - example_docs/about/changelog.md
-      - example_docs/about/conduct.md
-      - example_docs/about/license.md
+      - docs/about/changelog.md
+      - docs/about/conduct.md
+      - docs/about/license.md
 
 repo_url: https://github.com/carlosbornes/simpyson/
 edit_uri: blob/main/docs/
@@ -56,8 +37,8 @@ theme:
     - toc.follow
   name: material
   palette:
-    primary: orange
-    scheme: slate
+    primary: blue
+    scheme: dark
 
 markdown_extensions:
   - abbr
@@ -98,6 +79,10 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - mknotebooks:
+      input_dir: notebooks
+      output_dir: docs/notebooks
+      exclude: ['.*_checkpoint.ipynb']
   - autorefs
   - social
   - offline

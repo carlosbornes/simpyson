@@ -1,0 +1,51 @@
+spinsys {
+    nuclei 1H 1H 1H 1H 1H 1H 
+    channels 1H
+
+    shift 1 1p 0 0 0 0 0
+    shift 2 1p 0 0 0 0 0
+    shift 3 1p 0 0 0 0 0
+    shift 4 3.5p 0 0 0 0 0
+    shift 5 3.5p 0 0 0 0 0
+    shift 6 7p 0 0 0 0 0
+
+    jcoupling 1 4 30 0 0 0 0 0 
+    jcoupling 2 4 30 0 0 0 0 0 
+    jcoupling 3 4 30 0 0 0 0 0  
+    jcoupling 1 5 30 0 0 0 0 0 
+    jcoupling 2 5 30 0 0 0 0 0 
+    jcoupling 3 5 30 0 0 0 0 0  
+}
+
+par {
+  method           direct
+  spin_rate        10e3
+  crystal_file     rep256
+  gamma_angles     1 
+  proton_frequency 400e6
+  variable sw      10e3
+  start_operator   Inx  
+  detect_operator  Inp
+  verbose          01
+  np               2048
+}
+	   
+proc pulseq {} {
+    global par
+    acq_block {
+    delay [expr 1.0e6/$par(sw)]
+    }
+}
+
+proc main {} {
+    global par
+    set f [fsimpson]
+    faddlb $f 10 0
+    fzerofill $f 4096
+    fsave $f $par(name).fid
+    fft $f
+    fsave $f $par(name).spe
+  funload $f
+
+}
+
