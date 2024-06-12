@@ -20,30 +20,108 @@ from soprano.properties.nmr import (
     DipolarCoupling,
 )
 import warnings
+import copy
 
-def read_spe(filename, b0=None, nucleus=None):
-    """
-    This function reads NMR data from a SIMPSON SPE file.
+class SimpReader:
+    def __init__(self, filename, format, b0=None, nucleus=None):
+        self.filename = filename
+        self.format = format
+        self.b0 = b0
+        self.nucleus = nucleus
+        self._read_file()
 
-    Args:
-        filename (str): Path to the SPE file.
-        b0 (float): Magnetic field in T or 1H MHz.
-        nucleus (str): Nucleus name (e.g. '1H', '13C').
+    def _read_file(self):
+        if self.format == 'spe':
+            self._read_spe()
+        elif self.format == 'fid':
+            self._read_fid()
+        elif self.format == 'xreim':
+            self._read_xreim()
+        else:
+            raise ValueError('Invalid format. Supported formats are spe, fid, and xreim.')
+        
+    def _read_spe(self):
+        """
+        This method reads NMR data from a SIMPSON SPE file.
+        """
+        if self.b0 is None and self.nucleus is None:      
+            with open(self.filename) as f:
+                data_sec = False
+                real = []
+                imag = []
+                for line in f:
+                    if line.startswith('NP'):
+                        np_value = float(line.split('=')[1])
+                    elif line.startswith('SW'):
+                        sw = float(line.split('=')[1])
+                    elif line.startswith('DATA'):
+                        data_sec = True
+                    elif data_sec and line.startswith('END'):
+                        break
+                    elif data_sec:
+                        a, b = map(float, line.split())
+                        real.append(a)
+                        imag.append(b)
+                hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+                real = np.array(real)
+                imag = np.array(imag)
+                hz = np.array(hz)
+                self.data = {'real': real, 'imag': imag, 'np': np_value, 'sw': sw, 'hz': hz}
+        elif self.b0 is not None and self.nucleus is None or self.b0 is None and self.nucleus is not None:
+            raise ValueError('Both B0 and nucleus must be specified.')
+        else:
+            dir = os.path.dirname(os.path.realpath(__file__))
+            isotope_file = os.path.join(dir, 'isotope_data.json')
+            with open(self.filename) as f:
+                data_sec = False
+                real = []
+                imag = []
+                for line in f:
+                    if line.startswith('NP'):
+                        np_value = float(line.split('=')[1])
+                    elif line.startswith('SW'):
+                        sw = float(line.split('=')[1])
+                    elif line.startswith('DATA'):
+                        data_sec = True
+                    elif data_sec and line.startswith('END'):
+                        break
+                    elif data_sec:
+                        a, b = map(float, line.split())
+                        real.append(a)
+                        imag.append(b)
+                hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+                real = np.array(real)
+                imag = np.array(imag)
+                hz = np.array(hz)
+                
+                isotope = int(''.join(filter(str.isdigit, self.nucleus)))
+                element = ''.join(filter(str.isalpha, self.nucleus))
 
-    Returns:
-        dict: A dictionary containing the following keys:
-        real (numpy.ndarray): Real part of the NMR data.
-        img (numpy.ndarray): Imaginary part of the NMR data.
-        np (int): Number of data points.
-        sw (float): Spectral width (Hz).
-        hz (numpy.ndarray): NMR frequencies (Hz).
-        ppm (numpy.ndarray): NMR frequencies (ppm).
-    """
-    if b0 is None and nucleus is None:      
-        with open(filename) as f:
+                b0_unit = ''.join(filter(str.isalpha, self.b0)).lower()
+
+                with open(isotope_file) as f:
+                    data = json.load(f)
+                    gamma = data[element][str(isotope)]['Gamma']
+
+                if b0_unit == 't':
+                    b0 = int(''.join(filter(str.isdigit, self.b0)))
+                    ppm = hz / (b0 * gamma)
+                elif b0_unit == 'mhz':  
+                    b0 = int(''.join(filter(str.isdigit, self.b0)))
+                    gamma_h = data['H']['1']['Gamma']
+                    ppm = hz / (b0/(gamma_h/gamma))
+                else:
+                    raise ValueError('B0 unit must be T or MHz.')
+                self.data = {'real': real, 'imag': imag, 'np': np_value, 'sw': sw, 'hz': hz, 'ppm': ppm}
+
+    def _read_fid(self):
+        """
+        This method reads NMR data from a SIMPSON FID file.
+        """
+        with open(self.filename) as f:
             data_sec = False
             real = []
-            img = []
+            imag = []
             for line in f:
                 if line.startswith('NP'):
                     np_value = float(line.split('=')[1])
@@ -56,132 +134,80 @@ def read_spe(filename, b0=None, nucleus=None):
                 elif data_sec:
                     a, b = map(float, line.split())
                     real.append(a)
-                    img.append(b)
-            hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+                    imag.append(b)
+            dt = 1.0 / sw
+            time = np.linspace(0, np_value*dt, int(np_value))
             real = np.array(real)
-            img = np.array(img)
-            hz = np.array(hz)
-            dict = {'real': real, 'img': img, 'np': np_value, 'sw': sw, 'hz': hz}
-            return dict
-    elif b0 is not None and nucleus is None or b0 is None and nucleus is not None:
-        raise ValueError('Both B0 and nucleus must be specified.')
-    else:
-        dir = os.path.dirname(os.path.realpath(__file__))
-        isotope_file = os.path.join(dir, 'isotope_data.json')
-        with open(filename) as f:
-            data_sec = False
+            imag = np.array(imag)
+            time = np.array(time)*10e3
+            self.data = {'real': real, 'imag': imag, 'np': np_value, 'sw': sw, 'time': time}
+
+    def _read_xreim(self):
+        """
+        This method reads NMR data from a SIMPSON saved with -xreim option.
+        """
+        with open(self.filename) as f:
+            time = []
             real = []
-            img = []
+            imag = []
             for line in f:
-                if line.startswith('NP'):
-                    np_value = float(line.split('=')[1])
-                elif line.startswith('SW'):
-                    sw = float(line.split('=')[1])
-                elif line.startswith('DATA'):
-                    data_sec = True
-                elif data_sec and line.startswith('END'):
-                    break
-                elif data_sec:
-                    a, b = map(float, line.split())
-                    real.append(a)
-                    img.append(b)
-            hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+                time.append(float(line.split()[0]))
+                real.append(float(line.split()[1]))
+                imag.append(float(line.split()[2]))
+            time = np.array(time)
             real = np.array(real)
-            img = np.array(img)
-            hz = np.array(hz)
-            
-            isotope = int(''.join(filter(str.isdigit, nucleus)))
-            element = ''.join(filter(str.isalpha, nucleus))
+            imag = np.array(imag)
+            self.data = {'time': time, 'real': real, 'imag': imag}
 
-            b0_unit = ''.join(filter(str.isalpha, b0)).lower()
+    def to_spe(self):
+        if self.format != 'fid':
+            raise ValueError('Only FID format can be converted to SPE.')
 
-            # Get the gyromagnetic ratio from isotope_data.json
+        spectrum = copy.deepcopy(self)
+
+        npoints = spectrum.data['np']
+        sw = spectrum.data['sw']
+        raw_signal = spectrum.data['real'] + 1j * spectrum.data['imag']
+        signal = np.fft.fftshift(np.fft.fft(raw_signal))
+        real = np.real(signal)
+        imag = np.imag(signal)
+        hz = np.linspace(-sw/2, sw/2, int(npoints))
+        spectrum.data = {'real': real, 'imag': imag, 'np': npoints, 'sw': sw, 'hz': hz}
+
+        if spectrum.b0 is not None and spectrum.nucleus is not None:
+            dir = os.path.dirname(os.path.realpath(__file__))
+            isotope_file = os.path.join(dir, 'isotope_data.json')
+
+            isotope = int(''.join(filter(str.isdigit, spectrum.nucleus)))
+            element = ''.join(filter(str.isalpha, spectrum.nucleus))
+            b0_unit = ''.join(filter(str.isalpha, spectrum.b0)).lower()
+
             with open(isotope_file) as f:
                 data = json.load(f)
-                gamma = data[element][str(isotope)]['Gamma']
+                if element in data:
+                    gamma = data[element][str(isotope)]['Gamma']
+                else:
+                    raise ValueError('Nucleus not found.')
 
             if b0_unit == 't':
-                b0 = int(''.join(filter(str.isdigit, b0)))
+                b0 = int(''.join(filter(str.isdigit, spectrum.b0)))
                 ppm = hz / (b0 * gamma)
             elif b0_unit == 'mhz':  
                 # Convert from 1H MHz to MHz of the nucleus
-                b0 = int(''.join(filter(str.isdigit, b0)))
+                b0 = int(''.join(filter(str.isdigit, spectrum.b0)))
                 gamma_h = data['H']['1']['Gamma']
                 ppm = hz / (b0/(gamma_h/gamma))
             else:
                 raise ValueError('B0 unit must be T or MHz.')
-            dict = {'real': real, 'img': img, 'np': np_value, 'sw': sw, 'hz': hz, 'ppm': ppm}
-            return dict  
-    
-def read_fid(filename):
-    """
-    This function reads NMR data from a SIMPSON FID file.
 
-    Args:
-        filename (str): Path to the FID file.
+            spectrum.data['ppm'] = ppm
 
-    Returns:
-        dict: A dictionary containing the following keys:
-        real (numpy.ndarray): Real part of the NMR data.
-        img (numpy.ndarray): Imaginary part of the NMR data.
-        np (int): Number of data points.
-        sw (float): Spectral width (Hz).
-        time (numpy.ndarray): Time points (ms).
-    """
+        spectrum.format = 'spe'
 
-    with open(filename) as f:
-        data_sec = False
-        real = []
-        img = []
-        for line in f:
-            if line.startswith('NP'):
-                np_value = float(line.split('=')[1])
-            elif line.startswith('SW'):
-                sw = float(line.split('=')[1])
-            elif line.startswith('DATA'):
-                data_sec = True
-            elif data_sec and line.startswith('END'):
-                break
-            elif data_sec:
-                a, b = map(float, line.split())
-                real.append(a)
-                img.append(b)
-        dt = 1.0 / sw
-        time = np.linspace(0, np_value*dt, int(np_value))
-        real = np.array(real)
-        img = np.array(img)
-        time = np.array(time)*10e3
-        dict = {'real': real, 'img': img, 'np': np_value, 'sw': sw, 'time': time}
-        return dict
-    
-def read_xreim(filename):
-    """
-    This function reads NMR data from a SIMPSON saved with -xreim option.
+        return spectrum
 
-    Args:
-        filename (str): Path to the XREIM file.
 
-    Returns:
-        dict: A dictionary containing the following keys:
-        time (numpy.ndarray): Time points (s).
-        real (numpy.ndarray): Real part of the NMR data.
-        img (numpy.ndarray): Imaginary part of the NMR data.
-    """
 
-    with open(filename) as f:
-        time = []
-        real = []
-        img = []
-        for line in f:
-            time.append(float(line.split()[0]))
-            real.append(float(line.split()[1]))
-            img.append(float(line.split()[2]))
-        time = np.array(time)
-        real = np.array(real)
-        img = np.array(img)
-        dict = {'time': time, 'real': real, 'img': img}
-        return dict
-    
 # Write Simpson functions
 
 _spinsys_template = """spinsys {{
