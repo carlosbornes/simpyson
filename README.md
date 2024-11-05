@@ -1,5 +1,7 @@
 # SimPYson: A Pythonic Interface for SIMPSON
 
+[![DOI](https://zenodo.org/badge/813117518.svg)](https://doi.org/10.5281/zenodo.14041918)
+
 SimPYson is a Python package designed to simplify the use of [SIMPSON](https://inano.au.dk/about/research-centers-and-projects/nmr/software/simpson), a powerful code to simulate solid-state NMR experiments. Born out of the need to streamline the process, SimPYson makes it easier to prepare input files from DFT calculations and analyze results from SIMPSON simulations all within a Python.
 
 ## Features 🤌
