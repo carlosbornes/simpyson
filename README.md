@@ -1,19 +1,21 @@
 # SimPYson: A Pythonic Interface for SIMPSON
 
-SimPYson combines the power of SIMPSON NMR simulations with the versatility of Python, providing a seamless and efficient way to interact with SIMPSON within your Python workflows. Currently, the code is in its embryonic stage.
+SimPYson is a Python package designed to simplify the use of [SIMPSON](https://inano.au.dk/about/research-centers-and-projects/nmr/software/simpson), a powerful code to simulate solid-state NMR experiments. Born out of the need to streamline the process, SimPYson makes it easier to prepare input files from DFT calculations and analyze results from SIMPSON simulations all within a Python.
 
-# Current Implementation:
+## Features 🤌
 
-- Read data from SIMPSON spectra: Read and manipulate NMR data from SIMPSON `spe`, `fid` and `xreim` files directly into Python, enabling further analysis and processing.
+- **Convert DFT data to SIMPSON input files**: Prepare SIMPSON input files from DFT data (CASTEP, Quantum Espresso, VASP).
 
-More information can be found in the [documentation](https://carlosbornes.github.io/simpyson/).
+- **Read SIMPSON output files**: Load and manipulate NMR data from SIMPSON `.spe`, `.fid`, and `.xreim` files directly in Python for further analysis and visualization.
 
-# Planned Features:
+- **Templates for common experiments**: Use ready-made templates for typical Simpson NMR simulations, currently 90-degree pulse and no-pulse. More soon.
 
-- DFT Data Parsing: Seamlessly parse and extract relevant data from DFT calculations into SIMPSON.
+## Documentation 📖
 
-- Spinsys Preparation: Automate the process of preparing SIMPSON spinsys files from extracted DFT data.
+To learn more about simpyson, including some tutorials check the [documentation](https://carlosbornes.github.io/simpyson/).
 
-- SIMPSON Input File Generation: Generate SIMPSON input files from prepared spinsys files, saving time and effort in setting up your simulations.
+# Planned Features 🔜
 
-- Output File Analysis: Extract and analyze NMR data from SIMPSON output files, facilitating further data processing and exploration.
+- **Expand number of pulse sequences**: Additional templates for more complex NMR experiments.
+
+- **Expand number of DFT codes**: Improve the support of other DFT codes, suggestions are welcomed.
