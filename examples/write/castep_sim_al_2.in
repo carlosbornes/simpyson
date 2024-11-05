@@ -1,0 +1,42 @@
+spinsys {
+
+channels 27Al
+nuclei 27Al
+
+shift 1 21.260721702489263p 6.021638198368237p 0.5603677873359818 154.52675697316138 134.2842035838119 188.46181652671046
+
+quadrupole 1 2 -2586921.597391124 0.8975633833663132 182.79196913563652 135.83446332739499 99.91942187470819
+
+
+}
+
+
+par {
+    spin_rate        40000.0
+    np               2048
+    proton_frequency 800000000.0
+    start_operator   Inx
+    detect_operator  Inc
+    method           direct
+    crystal_file     rep168
+    gamma_angles     6
+    variable sw      20000.0
+    verbose          01
+    variable tsw     20000.0
+}
+
+proc pulseq {} {
+    global par
+    acq_block {
+    delay $par(tsw)
+    }
+}
+
+proc main {} {
+    global par
+    set f [fsimpson]
+    faddlb $f 200 0
+    fzerofill $f 4096
+    fft $f
+    fsave $f castep_sim_al_2.spe
+}

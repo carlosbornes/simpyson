@@ -7,11 +7,12 @@ nav:
   - Installation:
       - installation/install.md
   - User Guide:
-      - user_guide/read_files.ipynb
+      - Prepare Simpson simulations: user_guide/write_simpson.ipynb
+      - Read Simpson files: user_guide/read_files.ipynb
   - Code Documentation: reference/
   - About:
+      - about/contributors.md
       - about/changelog.md
-      - about/conduct.md
       - about/license.md
 
 repo_url: https://github.com/carlosbornes/simpyson/

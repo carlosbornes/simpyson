@@ -8,8 +8,21 @@ import json
 import os
 import sys
 from soprano.calculate.nmr.simpson import write_spinsys
+import copy
 
 class SimpReader:
+    """
+    A class to read and process NMR data from SIMPSON files.
+
+    Attributes:
+        filename (str): The name of the file to read.
+        format (str): The format of the file (spe, fid, xreim).
+        b0 (str, optional): The magnetic field strength in MHz or T.
+        nucleus (str, optional): The nucleus type.
+
+    Example:
+        reader = SimpReader('spe_file', 'spe', b0='9.4T', nucleus='13C')
+    """
     def __init__(self, filename, format, b0=None, nucleus=None):
         self.filename = filename
         self.format = format
@@ -147,6 +160,18 @@ class SimpReader:
             self.data = {'time': time, 'real': real, 'imag': imag}
 
     def to_spe(self):
+        """
+        Converts FID data to spectrum (SPE).
+
+        Raises:
+            ValueError: If the format is not FID.
+        
+        Returns:
+            SimpReader: A new SimpReader instance with SPE format data.
+
+        Example:
+            spectrum = reader.to_spe()
+        """
         if self.format != 'fid':
             raise ValueError('Only FID format can be converted to SPE.')
 

@@ -3,7 +3,7 @@
 If you have Python and pip installed, you can easily install SimPYson with the following command:
 
 ```bash
-pip install https://github.com/carlosbornes/simpyson/archive/master.zip
+pip install git+https://github.com/carlosbornes/simpyson
 ```
 
 All dependecies are installed automatically.

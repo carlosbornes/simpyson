@@ -1,0 +1,68 @@
+spinsys {
+
+channels 23Na
+nuclei 23Na 23Na
+
+shift 1 -7.613773750867836p -10.292232884107836p 0.5156921813674332 207.865004712018 80.61282321568757 -6.081058702803568
+shift 2 -25.527061752262682p -13.116513482024326p 0.3406209936107861 -114.84427270831634 72.32287705857223 69.41049379662272
+
+quadrupole 1 2 4334947.243953585 0.24406482279829203 8.877837269167854 4.97728027368721 198.47458862632962
+quadrupole 2 2 3233425.976522972 0.17705097340556727 146.54656549114998 76.15561627538736 -101.12836533299291
+
+
+}
+
+par {
+    spin_rate        40e3
+    np               2048
+    proton_frequency 400e6
+    start_operator   Inx
+    detect_operator  Inc
+    method           direct
+    crystal_file     zcw4180
+    gamma_angles     9
+    sw               100000
+    variable tsw     1e6/sw
+    verbose          0
+}
+
+proc pulseq {} {
+    global par
+    acq_block {
+    delay $par(tsw)
+    }
+}
+
+proc main {} {
+    global par
+    # 400MHz
+    set f [fsimpson]
+    faddlb $f 250 0
+    fzerofill $f 4096
+    fft $f
+    fsave $f $par(name)_400MHz.spe
+
+    # 800MHz
+    set par(proton_frequency) 800e6
+    set g [fsimpson]
+    faddlb $g 250 0
+    fzerofill $g 4096
+    fft $g
+    fsave $g $par(name)_800MHz.spe
+
+    # 1000 MHz 
+    set par(proton_frequency) 1000e6
+    set h [fsimpson]
+    faddlb $h 250 0
+    fzerofill $h 4096
+    fft $h
+    fsave $h $par(name)_1000MHz.spe
+
+    # 1500 MHz 
+    set par(proton_frequency) 1500e6
+    set i [fsimpson]
+    faddlb $i 250 0
+    fzerofill $i 4096
+    fft $i
+    fsave $i $par(name)_1500MHz.spe
+}

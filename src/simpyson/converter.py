@@ -4,6 +4,19 @@ import scipy.constants as const
 
 
 def read_vasp(file, format):
+    """
+    This function reads NMR data from a VASP OUTCAR file.
+
+    Args:
+        file (str): The path to the VASP OUTCAR file.
+        format (str): The format of the VASP OUTCAR file.
+
+    Returns:
+        ase.Atoms: The Atoms object with the NMR data.
+
+    Example:
+        reader = read_vasp('OUTCAR', 'vasp-out')
+    """
     filename = ase.io.read(file, format=format)
     n_atoms = filename.get_global_number_of_atoms()
     np.set_printoptions(suppress=True)
@@ -48,8 +61,15 @@ def read_vasp(file, format):
                 sym=lines[idx_header2[-1] + i + 1].split()
                 sym_tensor.append(lines[idx_header2[-1] + i + 1].split())
 
+        # Newer version of VASP 6.4.1
+        if lines[idx_header3 + 1].strip() == "using pGv susceptibility, excluding core contribution":
+            start_idx = idx_header3 + 5
+        # Older version of VASP
+        else:
+            start_idx = idx_header3 + 4
+
         for i in range(3):
-            const_shield.append((lines[idx_header3 + 4 + i]).split()[1:])
+            const_shield.append((lines[start_idx + i]).split()[1:])
 
         for i in range(len(np.unique(filename.get_chemical_symbols()))):
             core_shield_dict.append((lines[idx_header4 + 4 + i]).split()[1:])
