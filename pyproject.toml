@@ -44,7 +44,7 @@ documentation = "https://carlosbornes.github.io/simpyson/"
 changelog = "https://github.com/simpyson/simpyson/blob/main/CHANGELOG.md"
 
 [tool.setuptools.package-data]
-simpyson = ["py.typed"]
+simpyson = ["py.typed", "isotope_data.json"]
 
 [tool.pyright]
 include = ["simpyson"]
