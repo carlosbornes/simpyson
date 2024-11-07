@@ -8,9 +8,7 @@
 
 ## Why choose SimPYson? 🙎‍♂️
 
-No particular reason. One possible advantage lies in its seamless integration with other Python packages, making it easy to incorporate into your existing Python workflow. However, depending on your needs/taste, there are a few alternatives that may better suit you. Some examples:
-
-Why you should use simPYson? In our opinion, the easy integration with other python packages, but there are few alteratives that have some of the features, and might be better for you. The shouout goes to:
+No particular reason. One possible advantage lies in its seamless integration with other Python packages, making it easy to incorporate into your existing Python workflow. However, depending on your needs/taste, there are a few alternatives that may better suit you, hera are some examples:
 
 - [Simplot](https://inano.au.dk/about/research-centers-and-projects/nmr/software/simpson): From the developers of Simpson offers a user-friendly interface to analyze the results.
 - [Simview](https://github.com/zdetos/Simpson-View): From [Zdeněk Tošner](https://optimal-nmr.net/about.html) (Simpson dev) provides a GUI to run SIMPSON simulations and plot results within a clean, intuitive interface
