@@ -217,3 +217,33 @@ class SimpReader:
         spectrum.format = 'spe'
 
         return spectrum
+    
+    def to_fid(self):
+        """
+        Converts spectrum (SPE) data to FID.
+    
+        Raises:
+            ValueError: If the format is not SPE.
+        
+        Returns:
+            SimpReader: A new SimpReader instance with FID format data.
+        """
+        if self.format != 'spe':
+            raise ValueError('Only SPE format can be converted to FID.')
+    
+        fid = copy.deepcopy(self)
+    
+        npoints = fid.data['np']
+        sw = fid.data['sw']
+        hz = fid.data['hz']
+        signal = fid.data['real'] + 1j * fid.data['imag']
+        signal = np.fft.ifft(np.fft.ifftshift(signal))
+        real = np.real(signal)
+        imag = np.imag(signal)
+        dt = 1.0 / sw
+        time = np.linspace(0, npoints*dt, int(npoints)) * 10e3  # Match _read_fid scaling
+        fid.data = {'real': real, 'imag': imag, 'np': npoints, 'sw': sw, 'time': time}
+    
+        fid.format = 'fid'
+    
+        return fid

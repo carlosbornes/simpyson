@@ -25,7 +25,7 @@ classifiers = [
     "Operating System :: MacOS",
 ]
 requires-python = ">=3.9, <3.13"
-dependencies = ["numpy", "ase", "pandas", "soprano"]
+dependencies = ["numpy", "ase", "pandas", "soprano", "plotly", "PyQt5", "PyQtWebEngine"]
 
 [project.optional-dependencies]
 dev = ["codecov-cli>=0.4.1", "pytest>=7.4.0", "pytest-cov>=3.0.0", "ruff>=0.0.285"]
@@ -42,6 +42,9 @@ docs = [
 repository = "https://github.com/carlosbornes/simpyson"
 documentation = "https://carlosbornes.github.io/simpyson/"
 changelog = "https://github.com/simpyson/simpyson/blob/main/CHANGELOG.md"
+
+[project.scripts]
+simpyson-gui = "simpyson.gui:main"
 
 [tool.setuptools.package-data]
 simpyson = ["py.typed", "isotope_data.json"]
