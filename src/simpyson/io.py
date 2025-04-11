@@ -39,7 +39,7 @@ class SimpReader:
             self._read_xreim()
         else:
             raise ValueError('Invalid format. Supported formats are spe, fid, and xreim.')
-        
+
     def _read_spe(self):
         """
         This method reads NMR data from a SIMPSON SPE file.
@@ -93,7 +93,7 @@ class SimpReader:
                 real = np.array(real)
                 imag = np.array(imag)
                 hz = np.array(hz)
-                
+
                 isotope = int(''.join(filter(str.isdigit, self.nucleus)))
                 element = ''.join(filter(str.isalpha, self.nucleus)).upper()
 
@@ -165,7 +165,7 @@ class SimpReader:
 
         Raises:
             ValueError: If the format is not FID.
-        
+
         Returns:
             SimpReader: A new SimpReader instance with SPE format data.
 
@@ -217,22 +217,22 @@ class SimpReader:
         spectrum.format = 'spe'
 
         return spectrum
-    
+
     def to_fid(self):
         """
         Converts spectrum (SPE) data to FID.
-    
+
         Raises:
             ValueError: If the format is not SPE.
-        
+
         Returns:
             SimpReader: A new SimpReader instance with FID format data.
         """
         if self.format != 'spe':
             raise ValueError('Only SPE format can be converted to FID.')
-    
+
         fid = copy.deepcopy(self)
-    
+
         npoints = fid.data['np']
         sw = fid.data['sw']
         hz = fid.data['hz']
@@ -243,7 +243,55 @@ class SimpReader:
         dt = 1.0 / sw
         time = np.linspace(0, npoints*dt, int(npoints)) * 10e3  # Match _read_fid scaling
         fid.data = {'real': real, 'imag': imag, 'np': npoints, 'sw': sw, 'time': time}
-    
+
         fid.format = 'fid'
-    
+
         return fid
+
+    def save(self, filename, format='csv'):
+        _format = self.format
+
+        if format == 'csv':
+            if 'hz' in self.data:
+                x_data = self.data['hz']
+                x_label = 'Hz'
+            elif 'ppm' in self.data:
+                x_data = self.data['ppm']
+                x_label = 'ppm'
+            elif 'time' in self.data:
+                x_data = self.data['time']
+                x_label = 'Time'
+
+            np.savetxt(
+                filename,
+                np.column_stack((x_data, self.data['real'])),
+                delimiter=",",
+                header=f"{x_label},Real",
+                comments=""
+            )
+            return
+
+        if format != _format:
+            if format == 'spe':
+                self.to_spe()
+            if format == 'fid':
+                self.to_fid()
+
+        data = [
+            'SIMP\n',
+            f'NP={self.data["np"]}\n',
+            f'SW={self.data["sw"]}\n',
+            f'TYPE={format.upper()}\n',
+            'DATA\n'
+        ]
+
+        for re, im in zip(self.data['real'], self.data['imag']):
+            data.extend(f'{re} {im}\n')
+
+        data.extend('END')
+
+        with open(filename, 'w') as f:
+            f.writelines(data)
+
+        self.format = _format
+        return

@@ -38,7 +38,7 @@ class SimpysonGUI(QMainWindow):
 
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
-        
+
         # Create file list widget with multiple selection
         self.file_list = QListWidget()
         self.file_list.setSelectionMode(QListWidget.ExtendedSelection)
@@ -51,10 +51,10 @@ class SimpysonGUI(QMainWindow):
         self.browser = QWebEngineView()
         plot_layout.addWidget(self.browser)
         plot_widget.setLayout(plot_layout)
-        
+
         splitter.addWidget(plot_widget)
         splitter.setSizes([200, 1000])  # Left panel 200px, rest for plot
-        
+
         layout.addWidget(splitter)
 
     def create_menu(self):
@@ -97,62 +97,57 @@ class SimpysonGUI(QMainWindow):
             QMessageBox.warning(self, 'Save File', 'No file selected!')
             return
 
-        if self.data:
-            options = QFileDialog.Options()
-            save_filename, _ = QFileDialog.getSaveFileName(
-                self, 'Save File', '', 'CSV Files (*.csv)', options=options
-            )
-            if save_filename:
-                if 'hz' in self.data.data:
-                    x_data = self.data.data['hz']
-                    x_label = 'Hz'
-                elif 'ppm' in self.data.data:
-                    x_data = self.data.data['ppm']
-                    x_label = 'ppm'
-                elif 'time' in self.data.data:
-                    x_data = self.data.data['time']
-                    x_label = 'Time'
-                else:
-                    QMessageBox.warning(self, 'Save File', 'Data does not contain hz, ppm, or time.')
-                    return
-
-                try:
-                    np.savetxt(
-                        save_filename,
-                        np.column_stack((x_data, self.data.data['real'])),
-                        delimiter=",",
-                        header=f"{x_label},Real",
-                        comments=""
-                    )
-                    QMessageBox.information(self, 'Save File', 'File saved successfully!')
-                except Exception as e:
-                    QMessageBox.warning(self, 'Save File', f'Error saving file: {str(e)}')
-            else:
-                QMessageBox.warning(self, 'Save File', 'No filename provided!')
-        else:
+        if not self.data:
             QMessageBox.warning(self, 'Save File', 'No data to save!')
+            return
+
+        options = QFileDialog.Options()
+        save_filename, _ = QFileDialog.getSaveFileName(
+            self,
+            'Save File',
+            '',
+            'All Supported Files (*.csv *.fid *.spe);;CSV Files (*.csv);;FID Files (*.fid);;SPE Files (*.spe)',
+            options=options
+        )
+
+        if not save_filename:
+            # User canceled
+            return
+
+        try:
+            format = save_filename.lower().split('.')[-1] 
+
+            if format not in ['spe', 'fid', 'csv']:
+                QMessageBox.warning(self, 'Save File', 'Unsupported file format!')
+                return
+
+            self.data.save(save_filename, format=format)
+
+            QMessageBox.information(self, 'Save File', 'File saved successfully!')
+        except Exception as e:
+            QMessageBox.warning(self, 'Save File', f'Error saving file: {str(e)}')
 
     def open_file(self):
         options = QFileDialog.Options()
         filenames, _ = QFileDialog.getOpenFileNames(
             self, 'Open File', '', 'SIMPSON Files (*.spe *.fid)', options=options
         )
-        
+
         for filename in filenames:
             if filename:
                 file_format = filename.split('.')[-1]
                 base_name = os.path.basename(filename)
-                
+
                 # Store both the data and full path
                 self.files_data[base_name] = {
                     'data': SimpReader(filename, format=file_format),
                     'path': filename
                 }
-                
+
                 # Add to list widget if not already there
                 if self.file_list.findItems(base_name, Qt.MatchExactly) == []:
                     self.file_list.addItem(base_name)
-                
+
                 # If this is the first file, display it
                 if not self.current_file:
                     self.current_file = base_name
@@ -171,10 +166,10 @@ class SimpysonGUI(QMainWindow):
     def plot_data(self, selected_items=None):
         if not selected_items:
             selected_items = [self.file_list.findItems(self.current_file, Qt.MatchExactly)[0]] if self.current_file else []
-        
+
         if selected_items:
             fig = go.Figure()
-            
+
             # Determine x-axis type from first selected item
             first_data = self.files_data[selected_items[0].text()]['data']
             if 'ppm' in first_data.data:
@@ -189,7 +184,7 @@ class SimpysonGUI(QMainWindow):
             else:
                 QMessageBox.warning(self, 'Plot Data', 'Data does not contain valid axis information.')
                 return
-    
+
             # Plot each selected spectrum
             for item in selected_items:
                 data = self.files_data[item.text()]['data']
@@ -200,7 +195,7 @@ class SimpysonGUI(QMainWindow):
                         name=item.text(),
                         mode='lines'
                     ))
-    
+
             # Update layout with consistent axis settings
             fig.update_layout(
                 title='NMR Spectrum',
@@ -208,11 +203,11 @@ class SimpysonGUI(QMainWindow):
                 yaxis_title='Intensity',
                 showlegend=True
             )
-    
+
             # Always invert x-axis for ppm and hz
             if x_axis in ['ppm', 'hz']:
                 fig.update_xaxes(autorange="reversed")
-    
+
             # Update plot display
             html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
             self.browser.setHtml(html_content)
@@ -223,7 +218,7 @@ class SimpysonGUI(QMainWindow):
         if not self.current_file:
             QMessageBox.warning(self, 'Convert Hz to ppm', 'No file selected!')
             return
-            
+
         if self.data and 'hz' in self.data.data:
             b0, ok = QInputDialog.getText(self, 'Input', 'Enter B0 (e.g., 400MHz or 9.4T):')
             if ok and b0:
@@ -249,7 +244,7 @@ class SimpysonGUI(QMainWindow):
         if not self.current_file:
             QMessageBox.warning(self, 'Convert FID to SPE', 'No file selected!')
             return
-            
+
         if self.data and self.data.format == 'fid':
             try:
                 new_data = self.data.to_spe()
@@ -265,7 +260,7 @@ class SimpysonGUI(QMainWindow):
         if not self.current_file:
             QMessageBox.warning(self, 'Convert SPE to FID', 'No file selected!')
             return
-            
+
         if self.data and self.data.format == 'spe':
             try:
                 new_data = self.data.to_fid()
