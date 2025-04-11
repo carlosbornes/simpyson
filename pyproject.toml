@@ -46,6 +46,7 @@ changelog = "https://github.com/simpyson/simpyson/blob/main/CHANGELOG.md"
 
 [project.scripts]
 simpyson-gui = "simpyson.gui:main"
+simpyson = "simpyson.cli:main"
 
 [tool.setuptools.package-data]
 simpyson = ["py.typed", "isotope_data.json"]
