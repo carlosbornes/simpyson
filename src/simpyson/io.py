@@ -191,7 +191,7 @@ class SimpReader:
             isotope_file = os.path.join(dir, 'isotope_data.json')
 
             isotope = int(''.join(filter(str.isdigit, spectrum.nucleus)))
-            element = ''.join(filter(str.isalpha, spectrum.nucleus))
+            element = ''.join(filter(str.isalpha, spectrum.nucleus)).upper()
             b0_unit = ''.join(filter(str.isalpha, spectrum.b0)).lower()
 
             with open(isotope_file) as f:
