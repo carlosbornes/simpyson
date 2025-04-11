@@ -95,7 +95,7 @@ class SimpReader:
                 hz = np.array(hz)
                 
                 isotope = int(''.join(filter(str.isdigit, self.nucleus)))
-                element = ''.join(filter(str.isalpha, self.nucleus))
+                element = ''.join(filter(str.isalpha, self.nucleus)).upper()
 
                 b0_unit = ''.join(filter(str.isalpha, self.b0)).lower()
 
