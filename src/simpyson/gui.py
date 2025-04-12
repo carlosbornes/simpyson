@@ -33,6 +33,38 @@ class SimpysonGUI(QMainWindow):
         self.create_menu()
         self.create_main_layout()
 
+    def file_list_key_press(self, event):
+        if event.key() == Qt.Key_Delete:
+            selected_items = self.file_list.selectedItems()
+            if selected_items:
+                confirmation = QMessageBox.question(
+                    self, 'Remove Files', 
+                    f'Remove {len(selected_items)} selected file(s)?',
+                    QMessageBox.Yes | QMessageBox.No
+                )
+
+                if confirmation == QMessageBox.Yes:
+                    for item in selected_items:
+                        file_name = item.text()
+
+                        if file_name in self.files_data:
+                            del self.files_data[file_name]
+
+                        self.file_list.takeItem(self.file_list.row(item))
+
+                    if not self.files_data:
+                        self.current_file = None
+                        self.data = None
+                        self.filename = None
+                    elif self.current_file not in self.files_data:
+                        self.current_file = next(iter(self.files_data))
+                        self.data = self.files_data[self.current_file]['data']
+                        self.filename = self.files_data[self.current_file]['path']
+
+                    self.plot_data()
+        else:
+            QListWidget.keyPressEvent(self.file_list, event)
+
     def create_main_layout(self):
         # Create central widget with horizontal layout
         central_widget = QWidget()
@@ -47,6 +79,7 @@ class SimpysonGUI(QMainWindow):
         self.file_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.file_list.itemSelectionChanged.connect(self.on_selection_changed)
         splitter.addWidget(self.file_list)
+        self.file_list.keyPressEvent = self.file_list_key_press
 
         # Create plot area
         plot_widget = QWidget()
@@ -215,6 +248,7 @@ class SimpysonGUI(QMainWindow):
             html_content = fig.to_html(include_plotlyjs='cdn', full_html=True)
             self.browser.setHtml(html_content)
         else:
+            self.browser.setHtml('<html><body><h3 style="text-align:center;margin-top:40px;color:#888;">No data to display</h3></body></html>')
             QMessageBox.warning(self, 'Plot Data', 'No data to plot!')
 
     def convert_hz_to_ppm(self):
