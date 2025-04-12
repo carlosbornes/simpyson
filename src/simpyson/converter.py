@@ -1,6 +1,8 @@
 import ase.io
 import numpy as np
 import scipy.constants as const
+import os
+import json
 
 
 def read_vasp(file, format):
@@ -96,3 +98,91 @@ def read_vasp(file, format):
     filename.set_array('ms', ms)
 
     return filename
+
+def hz2ppm(hz, b0, nucleus, isotope_file=None):
+    """
+    Convert Hz values to ppm values.
+    
+    Args:
+        hz (numpy.ndarray): Frequency values in Hz
+        b0 (str): Magnetic field strength (e.g., '400MHz' or '9.4T')
+        nucleus (str): Nucleus type (e.g., '1H' or '13C')
+        isotope_file (str, optional): Path to isotope data file. If None, uses default.
+    
+    Returns:
+        numpy.ndarray: Chemical shift values in ppm
+        
+    Raises:
+        ValueError: If B0 unit is invalid or nucleus not found
+    """
+    
+    if isotope_file is None:
+        dir = os.path.dirname(os.path.realpath(__file__))
+        isotope_file = os.path.join(dir, 'isotope_data.json')
+    
+    isotope = int(''.join(filter(str.isdigit, nucleus)))
+    element = ''.join(filter(str.isalpha, nucleus)).upper()
+    b0_unit = ''.join(filter(str.isalpha, b0)).lower()
+    
+    with open(isotope_file) as f:
+        data = json.load(f)
+        if element in data and str(isotope) in data[element]:
+            gamma = data[element][str(isotope)]['Gamma']
+        else:
+            raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
+    
+    if b0_unit == 't':
+        b0_value = float(''.join(filter(str.isdigit, b0)))
+        ppm = hz / (b0_value * gamma)
+    elif b0_unit == 'mhz':
+        b0_value = float(''.join(filter(str.isdigit, b0)))
+        gamma_h = data['H']['1']['Gamma']
+        ppm = hz / (b0_value/(gamma_h/gamma))
+    else:
+        raise ValueError('B0 unit must be T or MHz.')
+    
+    return ppm
+
+def ppm2hz(ppm, b0, nucleus, isotope_file=None):
+    """
+    Convert ppm values to Hz values.
+    
+    Args:
+        ppm (numpy.ndarray): Chemical shift values in ppm
+        b0 (str): Magnetic field strength (e.g., '400MHz' or '9.4T')
+        nucleus (str): Nucleus type (e.g., '1H' or '13C')
+        isotope_file (str, optional): Path to isotope data file. If None, uses default.
+    
+    Returns:
+        numpy.ndarray: Frequency values in Hz
+        
+    Raises:
+        ValueError: If B0 unit is invalid or nucleus not found
+    """
+    
+    if isotope_file is None:
+        dir = os.path.dirname(os.path.realpath(__file__))
+        isotope_file = os.path.join(dir, 'isotope_data.json')
+    
+    isotope = int(''.join(filter(str.isdigit, nucleus)))
+    element = ''.join(filter(str.isalpha, nucleus)).upper()
+    b0_unit = ''.join(filter(str.isalpha, b0)).lower()
+    
+    with open(isotope_file) as f:
+        data = json.load(f)
+        if element in data and str(isotope) in data[element]:
+            gamma = data[element][str(isotope)]['Gamma']
+        else:
+            raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
+    
+    if b0_unit == 't':
+        b0_value = float(''.join(filter(str.isdigit, b0)))
+        hz = ppm * (b0_value * gamma)
+    elif b0_unit == 'mhz':
+        b0_value = float(''.join(filter(str.isdigit, b0)))
+        gamma_h = data['H']['1']['Gamma']
+        hz = ppm * (b0_value/(gamma_h/gamma))
+    else:
+        raise ValueError('B0 unit must be T or MHz.')
+    
+    return hz

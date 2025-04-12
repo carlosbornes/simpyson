@@ -12,6 +12,9 @@ import plotly.graph_objects as go
 from simpyson.io import SimpReader
 import numpy as np
 import os
+import copy
+from simpyson.converter import hz2ppm, ppm2hz
+
 
 class SimpysonGUI(QMainWindow):
     def __init__(self):
@@ -215,46 +218,85 @@ class SimpysonGUI(QMainWindow):
             QMessageBox.warning(self, 'Plot Data', 'No data to plot!')
 
     def convert_hz_to_ppm(self):
-        if not self.current_file:
+        selected_items = self.file_list.selectedItems()
+
+        if not selected_items:
             QMessageBox.warning(self, 'Convert Hz to ppm', 'No file selected!')
             return
 
-        if self.data and 'hz' in self.data.data:
-            b0, ok = QInputDialog.getText(self, 'Input', 'Enter B0 (e.g., 400MHz or 9.4T):')
-            if ok and b0:
-                nucleus, ok = QInputDialog.getText(self, 'Input', 'Enter nucleus (e.g., 1H or 13C):')
-                if ok and nucleus:
-                    try:
-                        # Re-read the file with b0 and nucleus values
-                        file_format = self.filename.split('.')[-1]
-                        new_data = SimpReader(self.filename, format=file_format, b0=b0, nucleus=nucleus)
-                        self.files_data[self.current_file]['data'] = new_data
-                        self.data = new_data
-                        self.plot_data()
-                    except ValueError as e:
-                        QMessageBox.warning(self, 'Convert Hz to ppm', str(e))
-                else:
-                    QMessageBox.warning(self, 'Convert Hz to ppm', 'Nucleus must be specified!')
-            else:
-                QMessageBox.warning(self, 'Convert Hz to ppm', 'B0 must be specified!')
-        else:
-            QMessageBox.warning(self, 'Convert Hz to ppm', 'No data to convert!')
-
-    def convert_fid_to_spe(self):
-        if not self.current_file:
-            QMessageBox.warning(self, 'Convert FID to SPE', 'No file selected!')
+        b0, ok_b0 = QInputDialog.getText(self, 'Input', 'Enter B0 (e.g., 400MHz or 9.4T):')
+        if not (ok_b0 and b0):
             return
 
-        if self.data and self.data.format == 'fid':
-            try:
-                new_data = self.data.to_spe()
-                self.files_data[self.current_file]['data'] = new_data
-                self.data = new_data
-                self.plot_data()
-            except ValueError as e:
-                QMessageBox.warning(self, 'Convert FID to SPE', str(e))
+        nucleus, ok_nucleus = QInputDialog.getText(self, 'Input', 'Enter nucleus (e.g., 1H or 13C):')
+        if not (ok_nucleus and nucleus):
+            return
+
+        for item in selected_items:
+            file_name = item.text()
+            file_data = self.files_data[file_name]['data']
+
+            if file_data and 'hz' in file_data.data:  # Remove the format check
+                try:
+                    new_data = copy.deepcopy(file_data)
+                    new_data.b0 = b0
+                    new_data.nucleus = nucleus
+
+                    hz = new_data.data['hz']
+                    new_data.data['ppm'] = hz2ppm(hz, b0, nucleus)
+    
+                    self.files_data[file_name]['data'] = new_data
+                    if file_name == self.current_file:
+                        self.data = new_data
+                
+                except ValueError as e:
+                    QMessageBox.warning(self, 'Convert Hz to ppm', 
+                                        f"Error converting {file_name}: {str(e)}")
+
+        self.plot_data(selected_items)
+
+    def convert_fid_to_spe(self):
+        selected_items = self.file_list.selectedItems()
+        
+        if not selected_items:
+            QMessageBox.warning(self, 'Convert FID to SPE', 'No files selected!')
+            return
+        
+        hz2ppm_prompt = QMessageBox.question(self, 
+                                             'Convert FID to SPE', 
+                                             'Would you like to get spectra in ppm?',
+                                             QMessageBox.Yes | QMessageBox.No)
+        if hz2ppm_prompt == QMessageBox.Yes:
+            b0, ok_b0 = QInputDialog.getText(self, 'Input', 'Enter B0 (e.g., 400MHz or 9.4T):')
+            if not (ok_b0 and b0):
+                return
+
+            nucleus, ok_nucleus = QInputDialog.getText(self, 'Input', 'Enter nucleus (e.g., 1H or 13C):')
+            if not (ok_nucleus and nucleus):
+                return
         else:
-            QMessageBox.warning(self, 'Convert FID to SPE', 'No FID data to convert!')
+            b0 = None
+            nucleus = None
+
+        for item in selected_items:
+            file_name = item.text()
+            file_data = self.files_data[file_name]['data']
+
+            if file_data and file_data.format == 'fid':
+                try:
+                    file_data.b0 = b0
+                    file_data.nucleus = nucleus
+
+                    new_data = file_data.to_spe()
+                    self.files_data[file_name]['data'] = new_data
+
+                    if file_name == self.current_file:
+                        self.data = new_data
+                except ValueError as e:
+                    QMessageBox.warning(self, 'Convert FID to SPE', f"Error converting {file_name}: {str(e)}")
+            else:
+                QMessageBox.warning(self, 'Convert FID to SPE', f"{file_name} is not a FID format file!")            
+        self.plot_data(selected_items)
 
     def convert_spe_to_fid(self):
         if not self.current_file:

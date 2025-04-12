@@ -9,6 +9,7 @@ import os
 import sys
 from soprano.calculate.nmr.simpson import write_spinsys
 import copy
+from simpyson.converter import hz2ppm
 
 class SimpReader:
     """
@@ -187,34 +188,10 @@ class SimpReader:
         spectrum.data = {'real': real, 'imag': imag, 'np': npoints, 'sw': sw, 'hz': hz}
 
         if spectrum.b0 is not None and spectrum.nucleus is not None:
-            dir = os.path.dirname(os.path.realpath(__file__))
-            isotope_file = os.path.join(dir, 'isotope_data.json')
-
-            isotope = int(''.join(filter(str.isdigit, spectrum.nucleus)))
-            element = ''.join(filter(str.isalpha, spectrum.nucleus)).upper()
-            b0_unit = ''.join(filter(str.isalpha, spectrum.b0)).lower()
-
-            with open(isotope_file) as f:
-                data = json.load(f)
-                if element in data:
-                    gamma = data[element][str(isotope)]['Gamma']
-                else:
-                    raise ValueError('Nucleus not found.')
-
-            if b0_unit == 't':
-                b0 = int(''.join(filter(str.isdigit, spectrum.b0)))
-                ppm = hz / (b0 * gamma)
-            elif b0_unit == 'mhz':  
-                # Convert from 1H MHz to MHz of the nucleus
-                b0 = int(''.join(filter(str.isdigit, spectrum.b0)))
-                gamma_h = data['H']['1']['Gamma']
-                ppm = hz / (b0/(gamma_h/gamma))
-            else:
-                raise ValueError('B0 unit must be T or MHz.')
-
-            spectrum.data['ppm'] = ppm
-
-        spectrum.format = 'spe'
+            try:
+                spectrum.data['ppm'] = hz2ppm(hz, spectrum.b0, spectrum.nucleus)
+            except ValueError as e:
+                print(f"Error converting to ppm: {e}")
 
         return spectrum
 
