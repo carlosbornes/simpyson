@@ -10,6 +10,8 @@ SimPYson is a Python package designed to simplify the use of [SIMPSON](https://i
 
 - **Read SIMPSON output files**: Load and manipulate NMR data from SIMPSON `.spe`, `.fid`, and `.xreim` files directly in Python for further analysis and visualization.
 
+- **Graphical User Interface**: You can type `simpyson gui` in your terminal to get Simpyson graphical user interface, and manipulate the data without any coding required.
+
 - **Templates for common experiments**: Use ready-made templates for typical Simpson NMR simulations, currently 90-degree pulse and no-pulse. More soon.
 
 ## Documentation 📖
