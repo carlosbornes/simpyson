@@ -5,10 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "simpyson"
 description="A python interface to Simpson"
-version = "0.0.1"
+version = "0.1.1"
 readme = "README.md"
 license = { text = "BSD-3" }
-authors = [{ name = "Carlos Bornes", email = "carlos.bornes@natur.cuni.cz" }]
+authors = [
+    { name = "Carlos Bornes"},
+    { name = "Daniel Pereira"},
+    { name = "Márcio Soares"},
+    ]
 keywords = ["NMR", "Simulation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
