@@ -7,10 +7,10 @@ SimPYson was originally developed by [Carlos Bornes](https://physchem.cz/people/
 The currently active maintainers are as follows:
 
 - [Carlos Bornes](https://github.com/carlosbornes)
+- [Márcio Soares](https://github.com/msoares98):
+- [Daniel Pereira](https://github.com/danielcunhapereira):
 
 ## Contributors
-
-- [Márcio Soares](https://github.com/msoares98): Implemented the conversion from FID to spectrum.
 
 Additional contributions were made by the individuals listed [here](https://github.com/carlosbornes/simpyson/graphs/contributors).
 
