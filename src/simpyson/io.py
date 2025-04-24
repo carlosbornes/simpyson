@@ -72,7 +72,6 @@ class SimpReader:
             raise ValueError('Both B0 and nucleus must be specified.')
         else:
             dir = os.path.dirname(os.path.realpath(__file__))
-            isotope_file = os.path.join(dir, 'isotope_data.json')
             with open(self.filename) as f:
                 data_sec = False
                 real = []
@@ -95,25 +94,11 @@ class SimpReader:
                 imag = np.array(imag)
                 hz = np.array(hz)
 
-                isotope = int(''.join(filter(str.isdigit, self.nucleus)))
-                element = ''.join(filter(str.isalpha, self.nucleus)).capitalize()
-
-                b0_unit = ''.join(filter(str.isalpha, self.b0)).lower()
-
-                with open(isotope_file) as f:
-                    data = json.load(f)
-                    gamma = data[element][str(isotope)]['Gamma']
-
-                if b0_unit == 't':
-                    b0 = int(''.join(filter(str.isdigit, self.b0)))
-                    ppm = hz / (b0 * gamma)
-                elif b0_unit == 'mhz':  
-                    b0 = int(''.join(filter(str.isdigit, self.b0)))
-                    gamma_h = data['H']['1']['Gamma']
-                    ppm = hz / (b0/(gamma_h/gamma))
-                else:
-                    raise ValueError('B0 unit must be T or MHz.')
-                self.data = {'real': real, 'imag': imag, 'np': np_value, 'sw': sw, 'hz': hz, 'ppm': ppm}
+                try:
+                    ppm = hz2ppm(hz, self.b0, self.nucleus)
+                    self.data = {'real': real, 'imag': imag, 'np': np_value, 'sw': sw, 'hz': hz, 'ppm': ppm}
+                except ValueError as e:
+                    print(f"Error converting to ppm: {e}")
 
     def _read_fid(self):
         """

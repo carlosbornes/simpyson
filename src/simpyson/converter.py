@@ -121,7 +121,7 @@ def hz2ppm(hz, b0, nucleus, isotope_file=None):
         isotope_file = os.path.join(dir, 'isotope_data.json')
     
     isotope = int(''.join(filter(str.isdigit, nucleus)))
-    element = ''.join(filter(str.isalpha, nucleus)).upper()
+    element = ''.join(filter(str.isalpha, nucleus)).capitalize()
     b0_unit = ''.join(filter(str.isalpha, b0)).lower()
     
     with open(isotope_file) as f:
@@ -132,12 +132,16 @@ def hz2ppm(hz, b0, nucleus, isotope_file=None):
             raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
     
     if b0_unit == 't':
-        b0_value = float(''.join(filter(str.isdigit, b0)))
-        ppm = hz / (b0_value * gamma)
+        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0)))
+        larm_freq = gamma * 1e7 * b0_value / (2 * np.pi * 1e6)
+        ppm = hz / np.abs(larm_freq)
     elif b0_unit == 'mhz':
-        b0_value = float(''.join(filter(str.isdigit, b0)))
+        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0))) 
         gamma_h = data['H']['1']['Gamma']
-        ppm = hz / (b0_value/(gamma_h/gamma))
+        b0_value_T = 2 * np.pi * b0_value * 1e6 / (gamma_h * 1e7)
+        larm_freq = gamma * 1e7 * b0_value_T / (2 * np.pi * 1e6)
+        # ppm conversion requires absolute value of larm_freq
+        ppm = hz / np.abs(larm_freq)
     else:
         raise ValueError('B0 unit must be T or MHz.')
     
@@ -165,7 +169,7 @@ def ppm2hz(ppm, b0, nucleus, isotope_file=None):
         isotope_file = os.path.join(dir, 'isotope_data.json')
     
     isotope = int(''.join(filter(str.isdigit, nucleus)))
-    element = ''.join(filter(str.isalpha, nucleus)).upper()
+    element = ''.join(filter(str.isalpha, nucleus)).capitalize()
     b0_unit = ''.join(filter(str.isalpha, b0)).lower()
     
     with open(isotope_file) as f:
@@ -176,13 +180,16 @@ def ppm2hz(ppm, b0, nucleus, isotope_file=None):
             raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
     
     if b0_unit == 't':
-        b0_value = float(''.join(filter(str.isdigit, b0)))
-        hz = ppm * (b0_value * gamma)
+        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0)))
+        larm_freq = gamma * 1e7 * b0_value / (2 * np.pi * 1e6)
     elif b0_unit == 'mhz':
-        b0_value = float(''.join(filter(str.isdigit, b0)))
+        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0))) 
         gamma_h = data['H']['1']['Gamma']
-        hz = ppm * (b0_value/(gamma_h/gamma))
+        b0_value_T = 2 * np.pi * b0_value * 1e6 / (gamma_h * 1e7)
+        larm_freq = gamma * 1e7 * b0_value_T / (2 * np.pi * 1e6)
     else:
         raise ValueError('B0 unit must be T or MHz.')
+    
+    hz = ppm * np.abs(larm_freq) 
     
     return hz

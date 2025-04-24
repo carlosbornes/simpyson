@@ -120,6 +120,10 @@ class SimpysonGUI(QMainWindow):
         convert_hz_to_ppm.triggered.connect(self.convert_hz_to_ppm)
         process_menu.addAction(convert_hz_to_ppm)
 
+        convert_ppm_to_hz = QAction('Convert ppm to Hz', self)
+        convert_ppm_to_hz.triggered.connect(self.convert_ppm_to_hz)
+        process_menu.addAction(convert_ppm_to_hz)
+
         convert_fid_to_spe = QAction('Convert FID to SPE', self)
         convert_fid_to_spe.triggered.connect(self.convert_fid_to_spe)
         process_menu.addAction(convert_fid_to_spe)
@@ -270,7 +274,7 @@ class SimpysonGUI(QMainWindow):
             file_name = item.text()
             file_data = self.files_data[file_name]['data']
 
-            if file_data and 'hz' in file_data.data:  # Remove the format check
+            if file_data and 'hz' in file_data.data:
                 try:
                     new_data = copy.deepcopy(file_data)
                     new_data.b0 = b0
@@ -285,6 +289,50 @@ class SimpysonGUI(QMainWindow):
                 
                 except ValueError as e:
                     QMessageBox.warning(self, 'Convert Hz to ppm', 
+                                        f"Error converting {file_name}: {str(e)}")
+
+        self.plot_data(selected_items)
+
+    def convert_ppm_to_hz(self):
+        selected_items = self.file_list.selectedItems()
+
+        if not selected_items:
+            QMessageBox.warning(self, 'Convert ppm to Hz', 'No file selected!')
+            return
+
+        b0, ok_b0 = QInputDialog.getText(self, 'Input', 'Enter B0 (e.g., 400MHz or 9.4T):')
+        if not (ok_b0 and b0):
+            return
+
+        nucleus, ok_nucleus = QInputDialog.getText(self, 'Input', 'Enter nucleus (e.g., 1H or 13C):')
+        if not (ok_nucleus and nucleus):
+            return
+
+        for item in selected_items:
+            file_name = item.text()
+            file_data = self.files_data[file_name]['data']
+
+            if file_data and 'ppm' in file_data.data:
+                try:
+                    new_data = copy.deepcopy(file_data)
+                    new_data.b0 = b0
+                    new_data.nucleus = nucleus
+
+                    ppm = new_data.data['ppm']
+                    new_data.data['hz'] = ppm2hz(ppm, b0, nucleus)
+
+                    # This is just an initial implementation
+                    # Maybe one should implement a way to select on the GUI
+                    # which range to show on the plot
+                    if 'ppm' in new_data.data:
+                        del new_data.data['ppm']
+
+                    self.files_data[file_name]['data'] = new_data
+                    if file_name == self.current_file:
+                        self.data = new_data
+                
+                except ValueError as e:
+                    QMessageBox.warning(self, 'Convert ppm to Hz', 
                                         f"Error converting {file_name}: {str(e)}")
 
         self.plot_data(selected_items)
