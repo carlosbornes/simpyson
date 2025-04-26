@@ -102,10 +102,12 @@ class SimpysonGUI(QMainWindow):
 
         open_action = QAction('Open', self)
         open_action.triggered.connect(self.open_file)
+        open_action.setShortcut('Ctrl+o')
         file_menu.addAction(open_action)
 
         save_action = QAction('Save', self)
         save_action.triggered.connect(self.save_file)
+        save_action.setShortcut('Ctrl+s')
         file_menu.addAction(save_action)
 
         file_menu.addSeparator()
@@ -298,6 +300,8 @@ class SimpysonGUI(QMainWindow):
                 if 'ppm' in file_data.data: return      # Already had ppm
                 if file_data.format == 'fid':
                     new_data = file_data.to_spe()
+                else:
+                    new_data = file_data
                 hz = new_data.data['hz']
                 b0 = new_data.b0
                 nucleus = new_data.nucleus
