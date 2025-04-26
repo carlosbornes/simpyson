@@ -9,12 +9,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 import plotly.graph_objects as go
-from simpyson.io import SimpReader
+from simpyson.io import read_simp
 import numpy as np
 import os
 import copy
 from simpyson.converter import hz2ppm, ppm2hz
-from simpyson.utils import get_larmor_freq
+from simpyson.utils import get_larmor_freq, add_spectra
 
 
 class SimpysonGUI(QMainWindow):
@@ -122,6 +122,11 @@ class SimpysonGUI(QMainWindow):
         setup_conversions = QAction('Setup Conversions', self)
         setup_conversions.triggered.connect(self.setup_conversions)
         process_menu.addAction(setup_conversions)
+        
+        # Combine spectra menu
+        combine_spectra = QAction('Combine Spectra', self)
+        combine_spectra.triggered.connect(self.combine_selected_spectra)
+        process_menu.addAction(combine_spectra)
 
         # View Menu
         view_menu = menubar.addMenu('View')
@@ -165,7 +170,7 @@ class SimpysonGUI(QMainWindow):
                 QMessageBox.warning(self, 'Save File', 'Unsupported file format!')
                 return
 
-            self.data.save(save_filename, format=format)
+            self.data.write(save_filename, format=format)
 
             QMessageBox.information(self, 'Save File', 'File saved successfully!')
         except Exception as e:
@@ -174,17 +179,23 @@ class SimpysonGUI(QMainWindow):
     def open_file(self):
         options = QFileDialog.Options()
         filenames, _ = QFileDialog.getOpenFileNames(
-            self, 'Open File', '', 'SIMPSON Files (*.spe *.fid)', options=options
+            self, 'Open File', '', 'SIMPSON Files (*.spe *.fid *.xreim)', options=options
         )
 
         for filename in filenames:
             if filename:
                 file_format = filename.split('.')[-1]
                 base_name = os.path.basename(filename)
-                data = SimpReader(filename, format=file_format)
-                view = 'hz' if file_format == 'spe' else 'fid'
+                
+                data = read_simp(filename, format=file_format)
+                
+                if file_format == 'spe':
+                    view = 'hz'
+                elif file_format == 'fid':
+                    view = 'fid'
+                elif file_format == 'xreim':
+                    view = 'fid'
 
-                # Store both the data and full path
                 self.files_data[base_name] = {
                     'data': data,
                     'path': filename,
@@ -221,31 +232,50 @@ class SimpysonGUI(QMainWindow):
             first_file = self.files_data[selected_items[0].text()]
             first_data = first_file['data']
 
-            if not 'view' in first_file:
+            if 'view' not in first_file:
                 QMessageBox.warning(self, 'Plot Data', 'Data does not contain valid axis information.')
                 return
 
+            # Get data based on view
             match first_file['view']:
                 case 'ppm':
+                    if not first_data.ppm:
+                        QMessageBox.warning(self, 'Plot Data', 'No ppm data available. Set B0 and nucleus first.')
+                        return
                     x_axis = 'ppm'
+                    data_source = 'ppm'
                     xlabel = 'Chemical Shift (ppm)'
                 case 'hz':
+                    if not first_data.spe:
+                        QMessageBox.warning(self, 'Plot Data', 'No spectrum data available.')
+                        return
                     x_axis = 'hz'
+                    data_source = 'spe'
                     xlabel = 'Frequency (Hz)'
                 case 'fid':
+                    if not first_data.fid:
+                        QMessageBox.warning(self, 'Plot Data', 'No FID data available.')
+                        return
                     x_axis = 'time'
+                    data_source = 'fid'
                     xlabel = 'Time (ms)'
 
             # Plot each selected spectrum
             for item in selected_items:
                 data = self.files_data[item.text()]['data']
-                if x_axis in data.data:
+                
+                # Access data via property (fid/spe/ppm)
+                data_dict = getattr(data, data_source)
+                if data_dict and x_axis in data_dict:
                     fig.add_trace(go.Scatter(
-                        x=data.data[x_axis],
-                        y=data.data['real'],
+                        x=data_dict[x_axis],
+                        y=data_dict['real'],
                         name=item.text(),
                         mode='lines'
                     ))
+                else:
+                    QMessageBox.warning(self, 'Plot Data', f'Missing data for {item.text()}.')
+                    continue
 
             # Update layout with consistent axis settings
             fig.update_layout(
@@ -256,7 +286,7 @@ class SimpysonGUI(QMainWindow):
             )
 
             # Always invert x-axis for ppm and hz
-            if x_axis in ['ppm', 'hz']:
+            if first_file['view'] in ['ppm', 'hz']:
                 fig.update_xaxes(autorange="reversed")
 
             # Update plot display
@@ -269,46 +299,15 @@ class SimpysonGUI(QMainWindow):
     def change_view(self, view):
         if not (selected_items := self.get_selection()): return
         
-        if not all(self.has_setup(item.text()) for item in selected_items):
-            QMessageBox.warning(self, 'Not Setup', 'Not all selected items have been setup')
+        if view == 'ppm' and not all(self.has_setup(item.text()) for item in selected_items):
+            QMessageBox.warning(self, 'Not Setup', 'B0 and nucleus must be set for PPM view')
             return
         
         for item in selected_items:
             file_name = item.text()
-            file_data = self.files_data[file_name]['data']
-            
-            view_key = 'time' if view == 'fid' else view
-
-            if not view_key in file_data.data:
-                self.convert_to(file_name, view)
-
             self.files_data[file_name]['view'] = view
 
         self.plot_data(selected_items)
-
-    def convert_to(self, file_name, target):
-        file_data = self.files_data[file_name]['data']
-
-        match target:
-            case 'fid':
-                if file_data.format == 'fid': return    # Already FID
-                new_data = file_data.to_fid()
-            case 'hz':
-                if file_data.format == 'spe': return    # SPE always has Hz
-                new_data = file_data.to_spe()
-            case 'ppm':
-                if 'ppm' in file_data.data: return      # Already had ppm
-                if file_data.format == 'fid':
-                    new_data = file_data.to_spe()
-                else:
-                    new_data = file_data
-                hz = new_data.data['hz']
-                b0 = new_data.b0
-                nucleus = new_data.nucleus
-                new_data.data['ppm'] = hz2ppm(hz, b0, nucleus)
-
-        self.files_data[file_name]['data'] = new_data
-        if file_name == self.current_file: self.data = new_data
 
     def setup_conversions(self):
         if not (selected_items := self.get_selection()): return
@@ -351,6 +350,55 @@ class SimpysonGUI(QMainWindow):
                 file_data.b0 = b0
                 file_data.nucleus = nucleus
     
+    # Combine spectra
+    def combine_selected_spectra(self):
+        """Combine multiple selected spectra into a single spectrum."""
+        if not (selected_items := self.get_selection()): 
+            return
+            
+        if len(selected_items) < 2:
+            QMessageBox.warning(self, 'Combine Spectra', 'Please select at least two spectra to combine')
+            return
+        
+        # Check that all selected items have spectrum data
+        for item in selected_items:
+            file_data = self.files_data[item.text()]['data']
+            if not file_data.spe:
+                QMessageBox.warning(self, 'Combine Spectra', 
+                               f'{item.text()} is not in spectrum format. Convert all files to spectra first.')
+                return
+        
+        # Collect all Simpy objects
+        spectra_list = [self.files_data[item.text()]['data'] for item in selected_items]
+        
+        try:
+            # Combine spectra
+            combined = add_spectra(spectra_list)
+            
+            # Create a new name for the combined spectrum
+            base_names = [item.text().split('.')[0] for item in selected_items]
+            new_name = f"Combined_{'_'.join(base_names[:2])}"
+            if len(base_names) > 2:
+                new_name += f"_plus{len(base_names)-2}"
+            new_name += '.spe'
+            
+            # Add to file list
+            self.files_data[new_name] = {
+                'data': combined,
+                'path': None,
+                'view': 'hz'
+            }
+            
+            self.file_list.addItem(new_name)
+            new_item = self.file_list.findItems(new_name, Qt.MatchExactly)[0]
+            self.file_list.setCurrentItem(new_item)
+            
+            QMessageBox.information(self, 'Combine Spectra', 
+                               f'Successfully combined {len(spectra_list)} spectra')
+                               
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Failed to combine spectra: {str(e)}')
+
     def get_selection(self):
         selected_items = self.file_list.selectedItems()
 

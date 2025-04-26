@@ -46,3 +46,24 @@ def get_larmor_freq(b0, nucleus, isotope_file=None):
         raise ValueError('B0 unit must be T or MHz.')
     
     return larmor_freq
+
+def add_spectra(spectra_list, b0=None, nucleus=None):
+    """Combine multiple Simpy objects into a single spectrum."""
+    if not spectra_list:
+        return None
+        
+    result = spectra_list[0].copy()
+    
+    if b0:
+        result.b0 = b0
+    if nucleus:
+        result.nucleus = nucleus
+        
+    for spectrum in spectra_list[1:]:
+        result._spe_data['real'] += spectrum.spe['real']
+        result._spe_data['imag'] += spectrum.spe['imag']
+        
+    if result.b0 and result.nucleus:
+        result._compute_ppm()
+        
+    return result
