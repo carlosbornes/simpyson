@@ -126,6 +126,7 @@ def read_csdf(filename, simpy_data):
     This method reads NMR data from a SIMPSON CSDF file.
     """
     import csdmpy as cp
+    
     data = cp.load(filename)
     hz = data.dimensions[0].coordinates.value
     real = data.dependent_variables[0].components[0].real
