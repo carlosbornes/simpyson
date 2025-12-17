@@ -1,8 +1,13 @@
-import numpy as np
-import os
-from simpyson.simpy import Simpy, Simpcalc
+from __future__ import annotations
 
-# Functions for reading Simpson output files
+import os
+
+import numpy as np
+
+from simpyson.calculator import SimpCalc
+from simpyson.simpy import Simpy
+
+
 def read_simp(
         filename,
         format=None,
@@ -33,35 +38,39 @@ def read_simp(
         format = 'csdf'
     else:
         raise ValueError(f"Cannot determine file format of {filename}")
-    
+
     simpy_data = Simpy(b0=b0, nucleus=nucleus)
 
-    if format == 'spe':
-        read_spe(filename, simpy_data)
-    elif format == 'fid':
-        read_fid(filename, simpy_data)
-    elif format == 'xreim':
-        read_xreim(filename, simpy_data)
-    elif format == 'csdf':
-        read_csdf(filename, simpy_data)
-    else:
-        raise ValueError(f"Unsupported format {format}")
+    try:
+        if format == 'spe':
+            read_spe(filename, simpy_data)
+        elif format == 'fid':
+            read_fid(filename, simpy_data)
+        elif format == 'xreim':
+            read_xreim(filename, simpy_data)
+        elif format == 'csdf':
+            read_csdf(filename, simpy_data)
+        else:
+            raise ValueError(f"Unsupported format {format}")
+    except Exception as e:
+        raise OSError(f"Error reading file {filename} as format {format}: {e!s}") from e
     return simpy_data
 
 # Define reading functions for each format
 def read_spe(filename, simpy_data):
-    """
-    This method reads NMR data from a SIMPSON SPE file.
-    """
+    """Read NMR data from a SIMPSON SPE file."""
     with open(filename) as f:
         data_sec = False
         real = []
         imag = []
+        ref = 0.0
         for line in f:
             if line.startswith('NP'):
                 np_value = float(line.split('=')[1])
             elif line.startswith('SW'):
                 sw = float(line.split('=')[1])
+            elif line.startswith('REF'):
+                ref = float(line.split('=')[1])
             elif line.startswith('DATA'):
                 data_sec = True
             elif data_sec and line.startswith('END'):
@@ -71,15 +80,13 @@ def read_spe(filename, simpy_data):
                 real.append(a)
                 imag.append(b)
 
-        hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+        hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value)) + ref
 
         simpy_data.from_spe(real, imag, np_value, sw, hz)
 
 
 def read_fid(filename, simpy_data):
-    """
-    This method reads NMR data from a SIMPSON FID file.
-    """
+    """Read NMR data from a SIMPSON FID file."""
     with open(filename) as f:
         data_sec = False
         real = []
@@ -103,13 +110,11 @@ def read_fid(filename, simpy_data):
         real = np.array(real)
         imag = np.array(imag)
         time = np.array(time)*10e3
-        
+
         simpy_data.from_fid(real, imag, np_value, sw, time)
 
 def read_xreim(filename, simpy_data):
-    """
-    This method reads NMR data from a SIMPSON saved with -xreim option.
-    """
+    """Read NMR data from a SIMPSON saved with -xreim option."""
     with open(filename) as f:
         time = []
         real = []
@@ -122,11 +127,9 @@ def read_xreim(filename, simpy_data):
         simpy_data.from_xreim(np.array(time), np.array(real), np.array(imag))
 
 def read_csdf(filename, simpy_data):
-    """
-    This method reads NMR data from a SIMPSON CSDF file.
-    """
+    """Read NMR data from a SIMPSON CSDF file."""
     import csdmpy as cp
-    
+
     data = cp.load(filename)
     hz = data.dimensions[0].coordinates.value
     real = data.dependent_variables[0].components[0].real
@@ -136,8 +139,8 @@ def read_csdf(filename, simpy_data):
 
     simpy_data.from_csdf(real, imag, hz, np_value, sw)
 
-# Function to write Simpson simulations
-def write_simp(spinsys, 
+
+def write_simp(spinsys,
                out_name,
                out_format=".inp",
                spin_rate=10e3,
@@ -151,7 +154,7 @@ def write_simp(spinsys,
                verbose=0,
                lb=20,
                zerofill=4096,
-               method="direct", 
+               method="direct",
                **kwargs
             ):
     """
@@ -173,14 +176,14 @@ def write_simp(spinsys,
         lb: Line broadening
         zerofill: Zero filling
         method: Simulation method ("direct", "reduced" etc.)
-        **kwargs: Additional parameters for Simpcalc
+        **kwargs: Additional parameters for SimpCalc
         
     Returns:
-        Simpcalc object that can be saved into a Simpson input file
+        SimpCalc object that can be saved into a Simpson input file
     """
-    
-    # Create the Simpcalc object with all parameters
-    sim = Simpcalc(
+
+    # Create the SimpCalc object with all parameters
+    sim = SimpCalc(
         spinsys=spinsys,
         out_name=out_name,
         out_format=out_format,
@@ -198,5 +201,5 @@ def write_simp(spinsys,
         method=method,
         **kwargs
     )
-    
-    return sim 
+
+    return sim

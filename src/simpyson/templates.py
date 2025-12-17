@@ -1,10 +1,13 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Set
+from __future__ import annotations
+
 import re
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Set
+
 
 class PulseSequenceTemplate(ABC):
     """Base class for pulse sequence templates"""
-    
+
     def __init__(self, **kwargs):
         """
         Initialize pulse sequence template.
@@ -14,34 +17,32 @@ class PulseSequenceTemplate(ABC):
         """
 
         self.parameters = self.get_default_parameters()
-        
+
         prefixed_params = {}
         for key, value in kwargs.items():
             prefixed_key = f"variable_{key}" if not key.startswith('variable_') else key
             prefixed_params[prefixed_key] = value
-        
+
         self.parameters.update(prefixed_params)
-        
+
         # Validate parameters
         self.validate_parameters()
-    
+
     @abstractmethod
     def get_default_parameters(self) -> Dict[str, Any]:
         """Return default parameters for this pulse sequence (with variable_ prefix)"""
-        pass
-    
+
     @abstractmethod
     def get_required_parameters(self) -> Set[str]:
         """Return set of required parameter names (with variable_ prefix)"""
-        pass
-    
+
     def validate_parameters(self):
         """Validate that all required parameters are present"""
         missing = self.get_required_parameters() - set(self.parameters.keys())
         if missing:
             missing_clean = {param.replace('variable_', '') for param in missing}
             raise ValueError(f"Missing required parameters: {', '.join(missing_clean)}")
-    
+
     def update_parameters(self, **kwargs):
         """
         Update parameters and re-validate.
@@ -49,12 +50,12 @@ class PulseSequenceTemplate(ABC):
         Args:
             **kwargs: Parameters to update (without variable_ prefix)
         """
-        
+
         prefixed_params = {}
         for key, value in kwargs.items():
             prefixed_key = f"variable_{key}" if not key.startswith('variable_') else key
             prefixed_params[prefixed_key] = value
-            
+
         self.parameters.update(prefixed_params)
         self.validate_parameters()
 
@@ -65,23 +66,25 @@ class NoPulse(PulseSequenceTemplate):
     Parameters:
         tsw (float): Sweep time in microseconds. Default: 1e4
     """
-    
+
     def get_default_parameters(self) -> Dict[str, Any]:
         return {
-            'variable_tsw': '1e6/sw'
+            'variable_tsw': '1e6/sw',
+            'variable_offset': 0
         }
-    
+
     def get_required_parameters(self) -> Set[str]:
-        return {'variable_tsw'}
-    
+        return {'variable_tsw', 'variable_offset'}
+
     @property
     def description(self) -> str:
         return "No pulse, direct acquisition"
-    
+
     def generate_code(self) -> str:
         return """
 proc pulseq {} {
     global par
+    offset $par(offset)
     acq_block {
         delay $par(tsw)
     }
@@ -95,25 +98,25 @@ class Pulse90(PulseSequenceTemplate):
     Parameters:
         pH (float): Pulse length in microseconds. Default: 5.0
         plH (float): Pulse power in Hz. Default: 50000
-        phH (str): Pulse phase. Default: 'y'
+        phH (str): Pulse phase. Default: '90'
         tsw (float): Sweep time in microseconds. Default: 1e4
     """
-    
+
     def get_default_parameters(self) -> Dict[str, Any]:
         return {
             'variable_pH': 5.0,
             'variable_plH': 50000,
-            'variable_phH': 'y',
+            'variable_phH': '90',
             'variable_tsw': '1e6/sw'
         }
-    
+
     def get_required_parameters(self) -> Set[str]:
         return {'variable_pH', 'variable_plH', 'variable_phH', 'variable_tsw'}
-    
+
     @property
     def description(self) -> str:
         return "Single 90° pulse on 1H"
-    
+
     def generate_code(self) -> str:
         return """
 proc pulseq {} {
@@ -135,12 +138,12 @@ class CPMAS(PulseSequenceTemplate):
         ph1H (str): 1H 90° pulse phase. Default: 'y'
         pcp (float): Contact pulse length in μs. Default: 1000
         plHcp (float): 1H contact pulse power in Hz. Default: 70000
-        phHcp (str): 1H contact pulse phase. Default: 'x'
+        phHcp (str): 1H contact pulse phase. Default: '0'
         plCcp (float): 13C contact pulse power in Hz. Default: 69000
-        phCcp (str): 13C contact pulse phase. Default: 'x'
+        phCcp (str): 13C contact pulse phase. Default: '0'
         dw (str): Dwell time expression. Default: '1.0e6/spin_rate/gamma_angles'
     """
-    
+
     def get_default_parameters(self) -> Dict[str, Any]:
         return {
             'variable_p1H': 5.0,
@@ -148,23 +151,23 @@ class CPMAS(PulseSequenceTemplate):
             'variable_ph1H': 'y',
             'variable_pcp': 1000,
             'variable_plHcp': 70000,
-            'variable_phHcp': 'x',
+            'variable_phHcp': '0',
             'variable_plCcp': 69000,
-            'variable_phCcp': 'x',
+            'variable_phCcp': '0',
             'variable_dw': '1e6/spin_rate/gamma_angles'
         }
-    
+
     def get_required_parameters(self) -> Set[str]:
         return {
             'variable_p1H', 'variable_pl1H', 'variable_ph1H',
             'variable_pcp', 'variable_plHcp', 'variable_phHcp',
             'variable_plCcp', 'variable_phCcp', 'variable_dw'
         }
-    
+
     @property
     def description(self) -> str:
         return "Cross-polarization magic angle spinning"
-    
+
     def generate_code(self) -> str:
         return """
 proc pulseq {} {
@@ -199,19 +202,32 @@ def get_template(name: str, **kwargs) -> PulseSequenceTemplate:
     if name not in pulseq_templates:
         available = ', '.join(pulseq_templates.keys())
         raise ValueError(f"Unknown template '{name}'. Available: {available}")
-    
+
     return pulseq_templates[name](**kwargs)
 
 class CustomPulseSequence(PulseSequenceTemplate):
     """Wrapper for custom string pulse sequences"""
-    
+
     def __init__(self, code: str, **kwargs):
         self.code = code
-        super().__init__(**kwargs)
-    
+        # Filter kwargs to only include parameters that appear in the code
+        # This prevents standard parameters (like np, sw) from being added as variables
+        # unless they are explicitly used in the pulse sequence code.
+        # Even if they are used, if they are standard parameters, they might be redundant
+        # but harmless.
+
+        required = self.get_required_parameters()
+        filtered_kwargs = {}
+        for k, v in kwargs.items():
+            # Check if parameter is required (with variable_ prefix)
+            if f"variable_{k}" in required:
+                filtered_kwargs[k] = v
+
+        super().__init__(**filtered_kwargs)
+
     def get_default_parameters(self) -> Dict[str, Any]:
         return {}
-    
+
     def get_required_parameters(self) -> Set[str]:
         # Extract parameter names from the code using regex
         params = set()
@@ -220,15 +236,15 @@ class CustomPulseSequence(PulseSequenceTemplate):
         for match in matches:
             params.add(f"variable_{match}")
         return params
-    
+
     @property
     def description(self) -> str:
         return "Custom pulse sequence"
-    
+
     def generate_code(self) -> str:
         if self.code.strip().startswith("proc pulseq"):
             return self.code
-        
+
         return f"""
 proc pulseq {{}} {{
     global par

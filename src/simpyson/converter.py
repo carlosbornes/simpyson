@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import ase.io
 import numpy as np
 import scipy.constants as const
-import os
-import json
 
 from simpyson.utils import get_larmor_freq
+
 
 def read_vasp(file, format):
     """
@@ -29,7 +30,7 @@ def read_vasp(file, format):
     core_shield_dict = []
     ms = []
     volume = None
-    with open(file, 'r') as outcar:
+    with open(file) as outcar:
         lines = outcar.readlines()
         #Find lines with specific header
         for line in lines:
@@ -50,7 +51,7 @@ def read_vasp(file, format):
                 volume = float(line.split()[4])
 
         chi_fact = 3.0/8.0/np.pi*volume*6.022142e23/1e24 # Conversion factor for magnetic susceptibility
-        
+
         #Calculate tensors for every atoms
         for i in range(n_atoms):
             grad = (lines[idx_header1+4+i]).split()[1:] # V_xx, V_yy, V_zz, V_xy, V_xz, V_yz
@@ -88,7 +89,7 @@ def read_vasp(file, format):
     sym_tensor = np.split(np.array(sym_tensor,dtype=float), n_atoms) #symmetry tensors
     const_shield = np.array(const_shield, dtype=float) #constant shielding of the lattice
     core_shield = np.array(core_shield,dtype=float) #core shielding depending on atom type
-    
+
     for i in range(n_atoms):
         core_diag = np.diag(core_shield[i] * np.ones(3))
         ms_tensor = sym_tensor[i] + const_shield + core_diag + mag_sus/chi_fact*1e6*np.eye(3) #calculating MS tensor
@@ -116,11 +117,11 @@ def hz2ppm(hz, b0, nucleus, isotope_file=None):
     Raises:
         ValueError: If B0 unit is invalid or nucleus not found
     """
-    
+
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
 
-    ppm = hz / np.abs(larmor_freq)
-    
+    ppm = hz / larmor_freq
+
     return ppm
 
 def ppm2hz(ppm, b0, nucleus, isotope_file=None):
@@ -139,9 +140,9 @@ def ppm2hz(ppm, b0, nucleus, isotope_file=None):
     Raises:
         ValueError: If B0 unit is invalid or nucleus not found
     """
-    
+
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
-    
-    hz = ppm * np.abs(larmor_freq) 
-    
+
+    hz = ppm * larmor_freq
+
     return hz

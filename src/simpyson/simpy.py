@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
-from simpyson.converter import hz2ppm, ppm2hz
+
+from simpyson.converter import hz2ppm
+
 
 class Simpy:
     """
@@ -23,50 +27,50 @@ class Simpy:
         self._fid_data = None  # Time-domain data
         self._spe_data = None  # Frequency-domain data
         self._xreim_data = None # xreim data
-        self._metadata = {}    
-    
+        self._metadata = {}
+
     @property
     def b0(self):
         return self._b0
-    
+
     @b0.setter
     def b0(self, value):
         self._b0 = value
         # Invalidate cached ppm data when b0 change
         if self._spe_data and 'ppm' in self._spe_data:
             del self._spe_data['ppm']
-    
+
     @property
     def nucleus(self):
         return self._nucleus
-    
+
     @nucleus.setter
     def nucleus(self, value):
         self._nucleus = value
         # Invalidate cached ppm data if nucleus changs
         if self._spe_data and 'ppm' in self._spe_data:
             del self._spe_data['ppm']
-    
+
     @property
     def fid(self):
         """Access time-domain data, converting from spectrum if needed."""
         if self._fid_data is None and self._spe_data is not None:
             self._compute_fid()
         return self._fid_data
-    
+
     @property
     def spe(self):
         """Access frequency-domain data, converting from FID if needed."""
         if self._spe_data is None and self._fid_data is not None:
             self._compute_spectrum()
         return self._spe_data
-    
+
     @property
     def ppm(self):
         """Access chemical shift data, computing from Hz if needed."""
         if self.spe and 'ppm' not in self.spe and self._b0 and self._nucleus:
             self._compute_ppm()
-        
+
         if self.spe and 'ppm' in self.spe:
             return {
                 'ppm': self.spe['ppm'],
@@ -74,7 +78,7 @@ class Simpy:
                 'imag': self.spe['imag']
             }
         return None
-    
+
     @property
     def xreim(self):
         """Access xreim data."""
@@ -84,12 +88,12 @@ class Simpy:
         """Convert FID to spectrum."""
         if not self._fid_data:
             return
-        
+
         npoints = self._fid_data['np']
         sw = self._fid_data['sw']
         signal = self._fid_data['real'] + 1j * self._fid_data['imag']
         spectrum = np.fft.fftshift(np.fft.fft(signal))
-        
+
         self._spe_data = {
             'real': np.real(spectrum),
             'imag': np.imag(spectrum),
@@ -97,18 +101,18 @@ class Simpy:
             'sw': sw,
             'hz': np.linspace(-sw/2, sw/2, int(npoints))
         }
-    
+
     def _compute_fid(self):
         """Convert spectrum to FID."""
         if not self._spe_data:
             return
-            
+
         npoints = self._spe_data['np']
         sw = self._spe_data['sw']
         signal = self._spe_data['real'] + 1j * self._spe_data['imag']
         time_signal = np.fft.ifft(np.fft.ifftshift(signal))
         dt = 1.0 / sw
-        
+
         self._fid_data = {
             'real': np.real(time_signal),
             'imag': np.imag(time_signal),
@@ -116,26 +120,26 @@ class Simpy:
             'sw': sw,
             'time': np.linspace(0, npoints*dt, int(npoints)) * 10e3
         }
-    
+
     def _compute_ppm(self):
         """Calculate ppm scale from Hz."""
         if not (self._spe_data and 'hz' in self._spe_data):
             return
-        
+
         if not (self._b0 and self._nucleus):
             return
-            
+
         try:
             self._spe_data['ppm'] = hz2ppm(self._spe_data['hz'], self._b0, self._nucleus)
         except ValueError as e:
             print(f"Error converting to ppm: {e}")
-    
+
     def from_fid(self, real, imag, np_value, sw, time=None):
         """Set data from FID values."""
         if time is None:
             dt = 1.0 / sw
             time = np.linspace(0, np_value*dt, int(np_value)) * 10e3
-            
+
         self._fid_data = {
             'real': np.array(real),
             'imag': np.array(imag),
@@ -143,16 +147,16 @@ class Simpy:
             'sw': sw,
             'time': np.array(time)
         }
-        
+
         # Clear cached spectrum data
         self._spe_data = None
         return self
-    
+
     def from_spe(self, real, imag, np_value, sw, hz=None):
         """Set data from spectrum values."""
         if hz is None:
             hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
-            
+
         self._spe_data = {
             'real': np.array(real),
             'imag': np.array(imag),
@@ -160,15 +164,15 @@ class Simpy:
             'sw': sw,
             'hz': np.array(hz)
         }
-        
+
         # Calculate ppm if possible
         if self._b0 and self._nucleus:
             self._compute_ppm()
-            
+
         # Clear cached FID data
         self._fid_data = None
         return self
-    
+
     def from_xreim(self, time, real, imag):
         """Set data from xreim values."""
 
@@ -182,7 +186,7 @@ class Simpy:
         self._fid_data = None
         self._spe_data = None
         return self
-    
+
     def from_csdf(self, real, imag, hz, np_value, sw):
         """Set data from CSDF values."""
 
@@ -199,11 +203,11 @@ class Simpy:
 
         self._fid_data = None
         return self
-    
+
     def copy(self):
         """Create a copy of a Simpy object."""
         import copy as cp
-    
+
         new_obj = Simpy(b0=self._b0, nucleus=self._nucleus)
 
         if self._fid_data is not None:
@@ -218,7 +222,7 @@ class Simpy:
         new_obj._metadata = cp.deepcopy(self._metadata)
 
         return new_obj
-    
+
     def write(self, filename, format='csv'):
         """
         Write data to file in specified format.
@@ -246,7 +250,7 @@ class Simpy:
                 y_data = self.xreim['real']
             else:
                 raise ValueError("No data to save")
-                
+
             np.savetxt(
                 filename,
                 np.column_stack((x_data, y_data)),
@@ -269,10 +273,10 @@ class Simpy:
             data_type = 'XREIM'
         else:
             raise ValueError(f"Unsupported save format: {format}")
-            
+
         if not data_dict:
             raise ValueError(f"No data available to save in {format} format")
-            
+
         # Write SIMPSON format file
         with open(filename, 'w') as f:
             f.write('SIMP\n')
@@ -282,10 +286,10 @@ class Simpy:
                 f.write(f'SW={data_dict["sw"]}\n')
             f.write(f'TYPE={data_type}\n')
             f.write('DATA\n')
-            
+
             for re, im in zip(data_dict['real'], data_dict['imag']):
                 f.write(f'{re} {im}\n')
-                
+
             f.write('END')
-            
+
         return self
