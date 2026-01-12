@@ -120,7 +120,7 @@ def hz2ppm(hz, b0, nucleus, isotope_file=None):
 
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
 
-    ppm = hz / larmor_freq
+    ppm = -hz / larmor_freq
 
     return ppm
 
@@ -143,6 +143,6 @@ def ppm2hz(ppm, b0, nucleus, isotope_file=None):
 
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
 
-    hz = ppm * larmor_freq
+    hz = -ppm * larmor_freq
 
     return hz

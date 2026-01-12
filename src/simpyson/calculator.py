@@ -63,6 +63,10 @@ class SimpCalc:
                 for param in required_clean:
                     if param in self.parameters:
                         pulseq_params[param] = self.parameters[param]
+                
+                # Pass offset if it exists
+                if 'variable_offset' in self.parameters:
+                    pulseq_params['offset'] = self.parameters['variable_offset']
 
                 # Create template with extracted parameters
                 return get_template(pulse_sequence, **pulseq_params)
@@ -417,7 +421,7 @@ proc main {{}} {{
                         except OSError:
                             pass
 
-def simulate_spectrum(spinsys, **kwargs):
+def simulate_spectrum(spinsys, delete_files=True, filepath=None, **kwargs):
     """
     Easily simulate a spectrum from a spin system with smart defaults.
     
@@ -426,6 +430,8 @@ def simulate_spectrum(spinsys, **kwargs):
     
     Args:
         spinsys: Soprano SpinSystem object or string definition
+        delete_files (bool): Whether to delete input/output files after simulation. Default is True.
+        filepath (str, optional): Path to save the SIMPSON input file. If None, uses a temporary file.
         **kwargs: Additional parameters to override defaults.
                   Common parameters: proton_frequency, spin_rate, lb, zerofill
                   
@@ -486,7 +492,7 @@ def simulate_spectrum(spinsys, **kwargs):
         min_shift = min(shifts)
         max_shift = max(shifts)
         center_ppm = (min_shift + max_shift) / 2
-        width_ppm = (max_shift - min_shift) * 1.5
+        width_ppm = (max_shift - min_shift)
 
         # Ensure minimum width
         if width_ppm < 10: width_ppm = 10
@@ -516,17 +522,38 @@ def simulate_spectrum(spinsys, **kwargs):
             except Exception:
                 pass
 
+        # Calculate center frequency for offset and ref
+        # SIMPSON's offset command ADDS to peak positions: raw = true + offset
+        # To center peaks at 0 in raw coordinates, use offset = -center_hz
+        # This way: raw = true + (-center_hz) = true - center_hz ≈ 0 for peaks near center
         center_hz = ppm2hz(center_ppm, b0, nucleus)
-        sw_hz = abs(ppm2hz(width_ppm, b0, nucleus) - ppm2hz(0, b0, nucleus))
+        offset_value = -center_hz  # Negate to center peaks at 0
+        
+        # Calculate the spectral width needed to cover all peaks
+        # With offset centering peaks at 0, SW only needs to cover the peak width
+        min_hz = ppm2hz(min_shift, b0, nucleus)
+        max_hz = ppm2hz(max_shift, b0, nucleus)
+        width_hz = abs(max_hz - min_hz)
+        required_sw = width_hz * 2
+        
+        # Round SW up to nearest multiple of spinning rate (n * spin_rate)
+        spin_rate = params['spin_rate']
+        n = 1
+        while n * spin_rate < required_sw:
+            n += 1
+        sw_hz = n * spin_rate
 
-        # Update params if not provided by usr
+        # Update params if not provided by user
+        # Use variable_offset and variable_ref so they become variables in the par block
+        # offset_value centers peaks at 0 in raw coordinates
+        # ref should equal offset_value so that: hz = raw - ref restores true Hz
         if 'sw' not in kwargs:
             params['sw'] = sw_hz
-        if 'offset' not in kwargs:
-            params['offset'] = center_hz
+        if 'variable_offset' not in kwargs:
+            params['variable_offset'] = offset_value
         if 'variable_ref' not in kwargs:
-            params['variable_ref'] = center_hz
+            params['variable_ref'] = offset_value
 
     # Create calculator and run
     calc = SimpCalc(spinsys, **params)
-    return calc.run(read_output=True, delete_files=True)
+    return calc.run(read_output=True, filepath=filepath, delete_files=delete_files)

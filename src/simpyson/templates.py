@@ -69,12 +69,11 @@ class NoPulse(PulseSequenceTemplate):
 
     def get_default_parameters(self) -> Dict[str, Any]:
         return {
-            'variable_tsw': '1e6/sw',
-            'variable_offset': 0
+            'variable_tsw': '1e6/sw'
         }
 
     def get_required_parameters(self) -> Set[str]:
-        return {'variable_tsw', 'variable_offset'}
+        return {'variable_tsw'}
 
     @property
     def description(self) -> str:
@@ -211,15 +210,11 @@ class CustomPulseSequence(PulseSequenceTemplate):
     def __init__(self, code: str, **kwargs):
         self.code = code
         # Filter kwargs to only include parameters that appear in the code
-        # This prevents standard parameters (like np, sw) from being added as variables
-        # unless they are explicitly used in the pulse sequence code.
-        # Even if they are used, if they are standard parameters, they might be redundant
-        # but harmless.
 
         required = self.get_required_parameters()
         filtered_kwargs = {}
         for k, v in kwargs.items():
-            # Check if parameter is required (with variable_ prefix)
+            # Check if parameter is required with variable_ prefix
             if f"variable_{k}" in required:
                 filtered_kwargs[k] = v
 

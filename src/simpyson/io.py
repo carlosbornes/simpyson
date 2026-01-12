@@ -80,7 +80,9 @@ def read_spe(filename, simpy_data):
                 real.append(a)
                 imag.append(b)
 
-        hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value)) + ref
+        # Assumes ref = offset. Maybe we should consider raising a warning
+        indices = np.arange(np_value)
+        hz = sw * (indices / np_value - 0.5) - ref
 
         simpy_data.from_spe(real, imag, np_value, sw, hz)
 
