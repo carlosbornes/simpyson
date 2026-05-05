@@ -1,31 +1,54 @@
 from __future__ import annotations
 
+import logging
 import os
+import warnings
 
 import numpy as np
 
-from simpyson.calculator import SimpCalc
 from simpyson.simpy import Simpy
+
+logger = logging.getLogger("simpyson")
 
 
 def read_simp(
-        filename,
-        format=None,
-        b0=None,
-        nucleus=None,
-):
-    """"
-    Reads Simpson's NMR data from a file into a unified Simpy object.
-    
-    Args:
-        filename: Path to the file
-        format: File format ('spe', 'fid', 'xreim') or None to guess from extension
-        b0: Magnetic field (e.g., '9.4T', '400MHz')
-        nucleus: Nucleus (e.g., '1H', '13C')
-        
-    Returns:
-        Simpy object with time- and frequency-domain data.
-        """
+    filename: str,
+    format: str | None = None,
+    b0: str | None = None,
+    nucleus: str | None = None,
+) -> Simpy:
+    """
+    Read SIMPSON NMR data from a file into a unified Simpy object.
+
+    The file format is determined from the extension if ``format`` is not
+    given explicitly.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the SIMPSON output file.
+    format : str or None
+        File format (``'spe'``, ``'fid'``, ``'xreim'``, ``'csdf'``).
+        If None, guessed from the file extension.
+    b0 : str or None
+        Magnetic field strength (e.g., ``'9.4T'``, ``'400MHz'``).
+        Needed for ppm conversion.
+    nucleus : str or None
+        Nucleus type (e.g., ``'1H'``, ``'13C'``).
+        Needed for ppm conversion.
+
+    Returns
+    -------
+    Simpy
+        Object containing the loaded data.
+
+    Raises
+    ------
+    ValueError
+        If the file format cannot be determined or is unsupported.
+    OSError
+        If the file cannot be read or parsed.
+    """
     # Try to guess format
     ext = os.path.splitext(filename)[1].lower()
     if ext == '.spe':
@@ -52,18 +75,34 @@ def read_simp(
             read_csdf(filename, simpy_data)
         else:
             raise ValueError(f"Unsupported format {format}")
-    except Exception as e:
+    except (ValueError, KeyError, IndexError, OSError) as e:
         raise OSError(f"Error reading file {filename} as format {format}: {e!s}") from e
     return simpy_data
 
-# Define reading functions for each format
-def read_spe(filename, simpy_data):
-    """Read NMR data from a SIMPSON SPE file."""
+
+def read_spe(filename: str, simpy_data: Simpy) -> None:
+    """
+    Read NMR data from a SIMPSON SPE file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ``.spe`` file.
+    simpy_data : Simpy
+        Object to populate with spectrum data.
+
+    Raises
+    ------
+    ValueError
+        If required header fields (NP, SW) are missing.
+    """
     with open(filename) as f:
         data_sec = False
-        real = []
-        imag = []
+        real: list[float] = []
+        imag: list[float] = []
         ref = 0.0
+        np_value: float | None = None
+        sw: float | None = None
         for line in f:
             if line.startswith('NP'):
                 np_value = float(line.split('=')[1])
@@ -80,19 +119,48 @@ def read_spe(filename, simpy_data):
                 real.append(a)
                 imag.append(b)
 
-        # Assumes ref = offset. Maybe we should consider raising a warning
+        if np_value is None or sw is None:
+            raise ValueError(
+                f"Missing required header fields in {filename}: "
+                f"{'NP' if np_value is None else ''}"
+                f"{' and ' if np_value is None and sw is None else ''}"
+                f"{'SW' if sw is None else ''} not found."
+            )
+
+        if ref != 0.0:
+            warnings.warn(
+                f"Using REF={ref} Hz from SPE header as frequency offset. "
+                "This assumes ref equals the SIMPSON offset parameter.",
+                stacklevel=2,
+            )
         indices = np.arange(np_value)
         hz = sw * (indices / np_value - 0.5) - ref
 
         simpy_data.from_spe(real, imag, np_value, sw, hz)
 
 
-def read_fid(filename, simpy_data):
-    """Read NMR data from a SIMPSON FID file."""
+def read_fid(filename: str, simpy_data: Simpy) -> None:
+    """
+    Read NMR data from a SIMPSON FID file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ``.fid`` file.
+    simpy_data : Simpy
+        Object to populate with FID data.
+
+    Raises
+    ------
+    ValueError
+        If required header fields (NP, SW) are missing.
+    """
     with open(filename) as f:
         data_sec = False
-        real = []
-        imag = []
+        real: list[float] = []
+        imag: list[float] = []
+        np_value: float | None = None
+        sw: float | None = None
         for line in f:
             if line.startswith('NP'):
                 np_value = float(line.split('=')[1])
@@ -107,32 +175,58 @@ def read_fid(filename, simpy_data):
                 real.append(a)
                 imag.append(b)
 
-        dt = 1.0 / sw
-        time = np.linspace(0, np_value*dt, int(np_value))
-        real = np.array(real)
-        imag = np.array(imag)
-        time = np.array(time)*10e3
+        if np_value is None or sw is None:
+            raise ValueError(
+                f"Missing required header fields in {filename}: "
+                f"{'NP' if np_value is None else ''}"
+                f"{' and ' if np_value is None and sw is None else ''}"
+                f"{'SW' if sw is None else ''} not found."
+            )
 
-        simpy_data.from_fid(real, imag, np_value, sw, time)
+        # Let from_fid() compute the time axis (avoids duplicating the calculation)
+        simpy_data.from_fid(np.array(real), np.array(imag), np_value, sw)
 
-def read_xreim(filename, simpy_data):
-    """Read NMR data from a SIMPSON saved with -xreim option."""
+
+def read_xreim(filename: str, simpy_data: Simpy) -> None:
+    """
+    Read NMR data from a SIMPSON file saved with the ``-xreim`` option.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ``.xreim`` file.
+    simpy_data : Simpy
+        Object to populate with xreim data.
+    """
     with open(filename) as f:
-        time = []
-        real = []
-        imag = []
+        time: list[float] = []
+        real: list[float] = []
+        imag: list[float] = []
         for line in f:
-            time.append(float(line.split()[0]))
-            real.append(float(line.split()[1]))
-            imag.append(float(line.split()[2]))
+            parts = line.split()
+            time.append(float(parts[0]))
+            real.append(float(parts[1]))
+            imag.append(float(parts[2]))
 
         simpy_data.from_xreim(np.array(time), np.array(real), np.array(imag))
 
-def read_csdf(filename, simpy_data):
-    """Read NMR data from a SIMPSON CSDF file."""
-    import csdmpy as cp
 
-    data = cp.load(filename)
+def read_csdf(filename: str, simpy_data: Simpy) -> None:
+    """
+    Read NMR data from a SIMPSON CSDF file.
+
+    Requires the ``csdmpy`` package to be installed.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the ``.csdf`` file.
+    simpy_data : Simpy
+        Object to populate with spectrum data.
+    """
+    import csdmpy as csdm
+
+    data = csdm.load(filename)
     hz = data.dimensions[0].coordinates.value
     real = data.dependent_variables[0].components[0].real
     imag = data.dependent_variables[0].components[0].imag
@@ -142,66 +236,29 @@ def read_csdf(filename, simpy_data):
     simpy_data.from_csdf(real, imag, hz, np_value, sw)
 
 
-def write_simp(spinsys,
-               out_name,
-               out_format=".inp",
-               spin_rate=10e3,
-               np=1024,
-               proton_freq=400e6,
-               start_op="Inx",
-               detect_op="Inp",
-               crystal_file="rep100",
-               gamma_angles=4,
-               sw=20e3,
-               verbose=0,
-               lb=20,
-               zerofill=4096,
-               method="direct",
-               **kwargs
-            ):
+def write_simp(spinsys: str, out_name: str, **kwargs) -> object:
     """
     Create a SIMPSON input file with the specified parameters.
-    
-    Args:
-        spinsys: Spin system 
-        out_name: Output file name
-        out_format: Output format
-        spin_rate: Spin rate in Hz
-        np: Number of points
-        proton_freq: Proton frequency in Hz
-        start_op: Start operator
-        detect_op: Detect operator
-        crystal_file: Crystal file
-        gamma_angles: Gamma angles
-        sw: Spectral width in Hz
-        verbose: Verbose output (0 or 1)
-        lb: Line broadening
-        zerofill: Zero filling
-        method: Simulation method ("direct", "reduced" etc.)
-        **kwargs: Additional parameters for SimpCalc
-        
-    Returns:
-        SimpCalc object that can be saved into a Simpson input file
+
+    This is a convenience wrapper around ``SimpCalc``. For full control, use
+    ``SimpCalc`` directly from ``simpyson.calculator``.
+
+    Parameters
+    ----------
+    spinsys : str
+        Spin system definition (SIMPSON spinsys block or body).
+    out_name : str
+        Output file name (without extension).
+    **kwargs
+        Additional parameters forwarded to ``SimpCalc`` (e.g.,
+        ``proton_frequency``, ``spin_rate``, ``sw``, ``np``, etc.).
+
+    Returns
+    -------
+    SimpCalc
+        Configured calculator object that can be saved with ``.save(path)``.
     """
+    # Lazy import to avoid circular dependency (calculator.py -> io.py)
+    from simpyson.calculator import SimpCalc
 
-    # Create the SimpCalc object with all parameters
-    sim = SimpCalc(
-        spinsys=spinsys,
-        out_name=out_name,
-        out_format=out_format,
-        spin_rate=spin_rate,
-        np=np,
-        proton_freq=proton_freq,
-        start_op=start_op,
-        detect_op=detect_op,
-        crystal_file=crystal_file,
-        gamma_angles=gamma_angles,
-        sw=sw,
-        verbose=verbose,
-        lb=lb,
-        zerofill=zerofill,
-        method=method,
-        **kwargs
-    )
-
-    return sim
+    return SimpCalc(spinsys=spinsys, out_name=out_name, **kwargs)

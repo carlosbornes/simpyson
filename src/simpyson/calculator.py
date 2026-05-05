@@ -1,25 +1,122 @@
 from __future__ import annotations
 
+import logging
+import math
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+
+from simpyson.converter import ppm2hz
 from simpyson.templates import (
     CustomPulseSequence,
     PulseSequenceTemplate,
     get_template,
     pulseq_templates,
 )
+from simpyson.utils import get_larmor_freq, get_spin
+
+logger = logging.getLogger("simpyson")
+
+
+def _proton_freq_to_b0(proton_freq):
+    """
+    Convert a proton_frequency value to a b0 string like '800.0MHz'.
+
+    Parameters
+    ----------
+    proton_freq : int, float, or str
+        Proton frequency in Hz (numeric) or as a string with units.
+
+    Returns
+    -------
+    str or None
+        B0 string suitable for ``hz2ppm`` / ``ppm2hz``, or None if conversion
+        is not possible.
+    """
+    if isinstance(proton_freq, (int, float)):
+        if proton_freq > 1e6:
+            return f"{proton_freq / 1e6:.1f}MHz"
+        return f"{proton_freq}MHz"
+    if isinstance(proton_freq, str):
+        match = re.match(r'(\d+(?:\.\d+)?)\s*([kMGT]?[Hh]z)?', proton_freq)
+        if match:
+            value, unit = match.groups()
+            if not unit or unit.lower() in ('hz', 'khz', 'mhz', 'ghz', 'thz'):
+                return proton_freq if unit else f"{float(value)}MHz"
+    return None
+
+
+def _extract_nucleus(spinsys_str):
+    """
+    Extract the observed nucleus from a SIMPSON spinsys string.
+
+    Looks for the first nucleus on the ``channels`` line, falling back to the
+    first nucleus on the ``nuclei`` line.
+
+    Parameters
+    ----------
+    spinsys_str : str
+        SIMPSON spinsys block as a string.
+
+    Returns
+    -------
+    str or None
+        Nucleus string (e.g. ``'1H'``, ``'13C'``), or None if not found.
+    """
+    channels_match = re.search(r'channels\s+([\w\s]+)', spinsys_str)
+    if channels_match:
+        nuclei_list = channels_match.group(1).split()
+        if nuclei_list:
+            return nuclei_list[0]
+    nuclei_match = re.search(r'nuclei\s+(\w+)', spinsys_str)
+    if nuclei_match:
+        return nuclei_match.group(1)
+    return None
 
 
 class SimpCalc:
     """
-    Class to create SIMPSON simulation input files.
-    
-    This class handles all four main sections of a SIMPSON input file:
-    - spinsys: Spin system definition
-    - par: Simulation parameters 
-    - pulseq: Pulse sequence
-    - main: Processing section
+    Generator for SIMPSON simulation input files (``.tcl``).
+
+    Assembles the four main sections of a SIMPSON input file (spinsys, par,
+    pulseq, main) from a spin system definition, pulse sequence template,
+    and simulation parameters.
+
+    Parameters
+    ----------
+    spinsys : str or object
+        Spin system definition. Can be a SIMPSON spinsys block string, the
+        body of a spinsys block (starting with ``channels`` or ``nuclei``),
+        or a Soprano SpinSystem object with a ``to_simpson()`` method.
+    pulse_sequence : str, PulseSequenceTemplate, or None
+        Pulse sequence to use. Can be a template name (``'no_pulse'``,
+        ``'pulse_90'``, ``'cp_mas'``), a custom Tcl code string, a
+        ``PulseSequenceTemplate`` instance, or None for no pulse sequence.
+    **kwargs
+        Simulation parameters. Required: ``proton_frequency``, ``spin_rate``,
+        ``start_operator``, ``detect_operator``, ``np``, ``sw``, ``method``,
+        ``crystal_file``, ``gamma_angles``, ``verbose``.
+
+    Raises
+    ------
+    ValueError
+        If ``spinsys`` is None or ``pulse_sequence`` has an invalid type.
+
+    Examples
+    --------
+    >>> calc = SimpCalc(
+    ...     spinsys="channels 1H\\nnuclei 1H\\nshift 1 5p 0 0 0 0 0",
+    ...     pulse_sequence='no_pulse',
+    ...     proton_frequency=400e6, spin_rate=10000, sw=20000, np=1024,
+    ...     start_operator='Inx', detect_operator='Inp', method='direct',
+    ...     crystal_file='rep100', gamma_angles=10, verbose=0,
+    ... )
+    >>> calc.save("simulation.in")
     """
 
-    def __init__(self, spinsys, pulse_sequence=None, **kwargs):
+    def __init__(self, spinsys: str | object, pulse_sequence: str | PulseSequenceTemplate | None = None, **kwargs) -> None:
         if spinsys is None:
             raise ValueError("spinsys cannot be None")
 
@@ -34,8 +131,8 @@ class SimpCalc:
 
         self.pulse_sequence = self._setup_pulse_sequence(pulse_sequence)
 
-    def __str__(self):
-        """Generate the complete SIMPSON input file"""
+    def __str__(self) -> str:
+        """Generate the complete SIMPSON input file as a string."""
         sections = []
         sections.append(self.generate_spinsys())
         sections.append(self.generate_par())
@@ -44,7 +141,7 @@ class SimpCalc:
         return "\n".join(sections)
 
 
-    def _setup_pulse_sequence(self, pulse_sequence):
+    def _setup_pulse_sequence(self, pulse_sequence: str | PulseSequenceTemplate | None) -> PulseSequenceTemplate | None:
         """Set up the pulse sequence based on user input."""
         if pulse_sequence is None:
              return None
@@ -84,43 +181,59 @@ class SimpCalc:
 
     def generate_spinsys(self):
         """
-        Generates the spinsys section of the SIMPSON input file.
-        It should be added either manually or using Soprano
-        
-        Returns:
-            str: The spinsys section as a string.
-        """
-        if hasattr(self.spinsys, 'to_simpson'):
-            self.spinsys = self.spinsys.to_simpson()
+        Generate the spinsys section of the SIMPSON input file.
 
-        elif isinstance(self.spinsys, str):
-            if self.spinsys.strip().startswith("spinsys"):
-                 # Already formatted block
-                self.spinsys = self.spinsys
-            elif self.spinsys.strip().startswith("channels") or self.spinsys.strip().startswith("nuclei"):
-                 # Body of spinsys block
-                spinsys_block = "spinsys {\n"
-                spinsys_block += f'{self.spinsys}\n'
-                spinsys_block += "}\n"
-                self.spinsys = spinsys_block
+        The spinsys can be provided as a Soprano SpinSystem object (with a
+        `to_simpson()` method), a complete ``spinsys { ... }`` block string, or
+        just the body (starting with ``channels`` or ``nuclei``).
+
+        This method is idempotent: calling it multiple times produces the same
+        output without re-wrapping.
+
+        Returns
+        -------
+        str
+            The spinsys section as a string.
+        """
+        spinsys = self.spinsys
+
+        # Convert Soprano object to string once
+        if hasattr(spinsys, 'to_simpson'):
+            spinsys = spinsys.to_simpson()
+
+        if isinstance(spinsys, str):
+            stripped = spinsys.strip()
+            if stripped.startswith("spinsys"):
+                # Already a complete block — use as-is
+                pass
+            elif stripped.startswith("channels") or stripped.startswith("nuclei"):
+                # Body only — wrap it
+                spinsys = f"spinsys {{\n{spinsys}\n}}\n"
             else:
-                # Assume it's just the body if it doesn't start with known keywords but is a string
-                # This is a bit risky but allows flexibility
-                spinsys_block = "spinsys {\n"
-                spinsys_block += f'{self.spinsys}\n'
-                spinsys_block += "}\n"
-                self.spinsys = spinsys_block
+                # Assume it's body content (allows flexibility)
+                spinsys = f"spinsys {{\n{spinsys}\n}}\n"
         else:
-            raise ValueError(f"spinsys must be a string or a Soprano SpinSystem object. Got {type(self.spinsys)}")
+            raise ValueError(
+                f"spinsys must be a string or a Soprano SpinSystem object. Got {type(spinsys)}"
+            )
 
-        return str(self.spinsys)
+        # Cache the processed string so repeated calls are idempotent
+        self.spinsys = spinsys
+        return spinsys
 
-    def generate_par(self):
+    def generate_par(self) -> str:
         """
-        Generates the par section of the SIMPSON input file.
-        
-        Returns:
-            str: The par section as a string.
+        Generate the par section of the SIMPSON input file.
+
+        Returns
+        -------
+        str
+            The par section as a string.
+
+        Raises
+        ------
+        ValueError
+            If required simulation parameters are missing.
         """
 
         # Parameters required for every simulation
@@ -172,12 +285,14 @@ class SimpCalc:
         par_block += "}\n"
         return par_block
 
-    def generate_pulseq(self):
+    def generate_pulseq(self) -> str:
         """
-        Generates the pulseq section of the SIMPSON input file.
+        Generate the pulseq section of the SIMPSON input file.
 
-        Returns:
-            str: The pulseq section as a string.
+        Returns
+        -------
+        str
+            The pulseq section as a string.
         """
         if not self.pulse_sequence:
             # Return empty pulseq block if no sequence provided
@@ -185,12 +300,19 @@ class SimpCalc:
 
         return self.pulse_sequence.generate_code()
 
-    def generate_main(self):
+    def generate_main(self) -> str:
         """
-        Generates the main section of the SIMPSON input file.
-    
-        Returns:
-            str: The main section as a string.
+        Generate the main section of the SIMPSON input file.
+
+        Returns
+        -------
+        str
+            The main section as a string.
+
+        Raises
+        ------
+        ValueError
+            If ``out_format`` is not one of ``'fid'``, ``'spe'``, ``'xreim'``.
         """
 
         out_format = self.parameters.get('out_format',
@@ -244,49 +366,74 @@ proc main {{}} {{
         else:
             raise ValueError(f"Unknown out_format '{out_format}'. Supported formats: 'fid', 'spe', 'xreim'")
 
-    def save(self, filepath):
-        """Save the SIMPSON input file"""
+    def save(self, filepath: str) -> None:
+        """
+        Save the SIMPSON input file to disk.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to write the ``.in`` / ``.tcl`` file.
+        """
         with open(filepath, 'w') as file:
             file.write(str(self))
 
-    def print(self):
-        """Print the SIMPSON input file to console"""
+    def print(self) -> None:
+        """Print the SIMPSON input file to the console (stdout)."""
         print(str(self))
 
-    def run(self, filepath=None, timeout=None, read_output=False, delete_files=False, b0=None, nucleus=None, simpson_path=None, dry_run=False):
+    def run(
+        self,
+        filepath: str | None = None,
+        timeout: int | None = None,
+        read_output: bool = False,
+        delete_files: bool = False,
+        b0: str | None = None,
+        nucleus: str | None = None,
+        simpson_path: str | None = None,
+        dry_run: bool = False,
+    ) -> str | object:
         """
         Run the SIMPSON simulation and optionally read the results.
-        
-        Args:
-            filepath (str, optional): Path to save the input file. If None, a temporary file will be created.
-            timeout (int, optional): Timeout in seconds for the SIMPSON process.
-            read_output (bool): Whether to read the output file after running. Default is False.
-            delete_files (bool): Whether to delete the input and output files after reading. Default is False.
-            b0 (str, optional): Magnetic field strength (e.g., '400MHz', '9.4T'). Only used if read_output=True.
-                If None, will be automatically derived from the 'proton_frequency' parameter.
-            nucleus (str, optional): Nucleus type (e.g., '1H', '13C'). Only used if read_output=True.
-                If None, will be automatically extracted from the spin system definition.
-            simpson_path (str, optional): Custom path to the SIMPSON executable. If provided, this path will be used
-                instead of searching for SIMPSON in the PATH or common installation locations.
-            dry_run (bool): If True, only generates the input file and prints the command without running SIMPSON.
-            
-        Returns:
-            str or Simpy or None: 
-                - If read_output=True: A Simpy object containing the simulation results
-                - If read_output=False: The command-line output from SIMPSON as a string
-                - If dry_run=True: The command that would be executed
-            
-        Raises:
-            FileNotFoundError: If SIMPSON is not found in the PATH, common locations, or the provided path.
-            subprocess.TimeoutExpired: If the simulation doesn't complete within the timeout.
-            subprocess.CalledProcessError: If SIMPSON returns a non-zero exit code.
-        """
-        import os
-        import re
-        import shutil
-        import subprocess
-        import tempfile
 
+        Parameters
+        ----------
+        filepath : str or None
+            Path to save the input file. If None, a temporary file is created.
+        timeout : int or None
+            Timeout in seconds for the SIMPSON process.
+        read_output : bool
+            If True, read the output file and return a Simpy object.
+        delete_files : bool
+            If True, delete input and output files after reading.
+        b0 : str or None
+            Magnetic field strength (e.g., ``'400MHz'``). Auto-derived from
+            ``proton_frequency`` if not provided. Only used with
+            ``read_output=True``.
+        nucleus : str or None
+            Nucleus type (e.g., ``'1H'``). Auto-extracted from the spinsys
+            if not provided. Only used with ``read_output=True``.
+        simpson_path : str or None
+            Custom path to the SIMPSON executable.
+        dry_run : bool
+            If True, generate the input file and return the command string
+            without running SIMPSON.
+
+        Returns
+        -------
+        str or Simpy
+            The SIMPSON command (if ``dry_run``), stdout output (if not
+            ``read_output``), or a ``Simpy`` object with simulation results.
+
+        Raises
+        ------
+        FileNotFoundError
+            If SIMPSON is not found in PATH or at the specified path.
+        subprocess.TimeoutExpired
+            If the simulation exceeds the timeout.
+        subprocess.CalledProcessError
+            If SIMPSON returns a non-zero exit code.
+        """
         # Find the SIMPSON executable
         simpson_executable = None
 
@@ -317,8 +464,8 @@ proc main {{}} {{
 
         if dry_run:
             cmd = [simpson_executable if simpson_executable else "simpson", filepath]
-            print(f"Dry run: Generated input file at {filepath}")
-            print(f"Command: {' '.join(cmd)}")
+            logger.info("Dry run: Generated input file at %s", filepath)
+            logger.info("Command: %s", ' '.join(cmd))
             return ' '.join(cmd)
 
         # Determine expected output filename/locations
@@ -341,14 +488,22 @@ proc main {{}} {{
         try:
             cmd = [simpson_executable, filepath]
 
-            result = subprocess.run(cmd,
-                                 check=True,
-                                 capture_output=True,
-                                 text=True,
-                                 timeout=timeout)
+            try:
+                result = subprocess.run(cmd,
+                                     check=True,
+                                     capture_output=True,
+                                     text=True,
+                                     timeout=timeout)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(
+                    f"SIMPSON failed with exit code {e.returncode}.\n"
+                    f"SIMPSON stderr:\n{e.stderr}\n"
+                    f"SIMPSON stdout:\n{e.stdout}"
+                ) from e
 
-            # Read ouput from run
+            # Read output from run
             if read_output:
+                # Lazy import to avoid circular dependency (io.py imports SimpCalc)
                 from simpyson.io import read_simp
 
                 output_file = None
@@ -366,39 +521,11 @@ proc main {{}} {{
 
                 # Auto-extract magnetic field if not provided
                 if b0 is None and 'proton_frequency' in self.parameters:
-                    proton_freq = self.parameters['proton_frequency']
-                    if isinstance(proton_freq, (int, float)):
-                        # Convert to MHz if in Hz
-                        if proton_freq > 1e6:
-                            b0 = f"{proton_freq/1e6:.1f}MHz"
-                        else:
-                            b0 = f"{proton_freq}MHz"
-                    elif isinstance(proton_freq, str):
-                        match = re.match(r'(\d+(?:\.\d+)?)\s*([kMGT]?Hz|[kMGT]?hz)?', proton_freq)
-                        if match:
-                            value, unit = match.groups()
-                            value = float(value)
-                            if not unit:
-                                b0 = f"{value}MHz"
-                            elif unit.lower() in ['hz', 'khz', 'mhz', 'ghz', 'thz']:
-                                b0 = proton_freq
-                            else:
-                                b0 = f"{value}MHz"
+                    b0 = _proton_freq_to_b0(self.parameters['proton_frequency'])
 
                 # Auto-extract nucleus information if not provided
                 if nucleus is None:
-                    spinsys_str = self.generate_spinsys()
-                    # First nucleus on the channels line is the observed nucleus
-                    channels_match = re.search(r'channels\s+([\w\s]+)', spinsys_str)
-                    if channels_match:
-                        # Split by whitespace and take the first nucleus
-                        nuclei_list = channels_match.group(1).split()
-                        if nuclei_list:
-                            nucleus = nuclei_list[0]
-                    if nucleus is None:
-                        nuclei_match = re.search(r'nuclei\s+(\w+)', spinsys_str)
-                        if nuclei_match:
-                            nucleus = nuclei_match.group(1)
+                    nucleus = _extract_nucleus(self.generate_spinsys())
 
                 # Read the output file
                 sim_result = read_simp(output_file, format=out_format, b0=b0, nucleus=nucleus)
@@ -421,28 +548,38 @@ proc main {{}} {{
                         except OSError:
                             pass
 
-def simulate_spectrum(spinsys, delete_files=True, filepath=None, **kwargs):
+def simulate_spectrum(
+    spinsys: str | object,
+    delete_files: bool = True,
+    filepath: str | None = None,
+    **kwargs,
+) -> object:
     """
-    Easily simulate a spectrum from a spin system with smart defaults.
-    
-    This function automatically calculates the spectral width and center frequency
-    based on the chemical shifts in the spin system, and runs a 'no_pulse' simulation.
-    
-    Args:
-        spinsys: Soprano SpinSystem object or string definition
-        delete_files (bool): Whether to delete input/output files after simulation. Default is True.
-        filepath (str, optional): Path to save the SIMPSON input file. If None, uses a temporary file.
-        **kwargs: Additional parameters to override defaults.
-                  Common parameters: proton_frequency, spin_rate, lb, zerofill
-                  
-    Returns:
-        Simpy: The simulated spectrum object
+    Simulate a spectrum from a spin system with smart defaults.
+
+    Automatically calculates the spectral width and center frequency from the
+    chemical shifts in the spin system, then runs a ``no_pulse`` simulation
+    via SIMPSON.
+
+    Parameters
+    ----------
+    spinsys : str or object
+        Spin system definition. Can be a SIMPSON spinsys string or a Soprano
+        SpinSystem object with a ``to_simpson()`` method.
+    delete_files : bool
+        If True (default), delete input/output files after simulation.
+    filepath : str or None
+        Path to save the SIMPSON input file. If None, uses a temporary file.
+    **kwargs
+        Override any default simulation parameter. Common overrides:
+        ``proton_frequency``, ``spin_rate``, ``lb``, ``zerofill``,
+        ``detect_operator``.
+
+    Returns
+    -------
+    Simpy
+        Object containing the simulated spectrum.
     """
-    import re
-
-    from simpyson.converter import ppm2hz
-    from simpyson.utils import get_spin
-
     # Defaults
     defaults = {
         'proton_frequency': 800e6,
@@ -465,20 +602,39 @@ def simulate_spectrum(spinsys, delete_files=True, filepath=None, **kwargs):
     user_detect_op = 'detect_operator' in kwargs
     params.update(kwargs)
 
-    # Extract shifts to calculate sw and offset
+    # Static spectra require gamma_angles=1
+    if params.get('spin_rate', 0) == 0 and 'gamma_angles' not in kwargs:
+        params['gamma_angles'] = 1
+
+    # Extract spinsys string
     spinsys_str = ""
     if hasattr(spinsys, 'to_simpson'):
         spinsys_str = spinsys.to_simpson()
     else:
         spinsys_str = str(spinsys)
 
-    # Parse shifts
+    # Detect nucleus and spin early — needed for both detect_operator selection and SW estimation
+    b0 = _proton_freq_to_b0(params['proton_frequency'])
+    nucleus = _extract_nucleus(spinsys_str) or '1H'
+    spin = None
+    try:
+        spin = get_spin(nucleus)
+    except ValueError:
+        logger.debug("Could not determine spin for nucleus %s", nucleus)
+
+    # Switch to Inc for quadrupolar nuclei unless the user explicitly set detect_operator.
+    # Inc detects only the central transition (−½ ↔ +½), giving a narrow, interpretable peak.
+    if not user_detect_op and spin is not None and spin > 0.5:
+        params['detect_operator'] = 'Inc'
+
+    # Parse chemical shifts and quadrupolar couplings in one pass
     shifts = []
+    quadrupoles = []
     for line in spinsys_str.splitlines():
-        if line.strip().startswith('shift'):
-            parts = line.split()
+        stripped = line.strip()
+        if stripped.startswith('shift'):
+            parts = stripped.split()
             if len(parts) > 2:
-                # shift index iso ...
                 val_str = parts[2]
                 if val_str.endswith('p'):
                     shifts.append(float(val_str[:-1]))
@@ -487,72 +643,63 @@ def simulate_spectrum(spinsys, delete_files=True, filepath=None, **kwargs):
                         shifts.append(float(val_str))
                     except ValueError:
                         pass
+        elif stripped.startswith('quadrupole'):
+            parts = stripped.split()
+            # quadrupole site order Cq eta alpha beta gamma
+            if len(parts) >= 4:
+                try:
+                    quadrupoles.append(abs(float(parts[3])))
+                except ValueError:
+                    pass
 
-    if shifts:
-        min_shift = min(shifts)
-        max_shift = max(shifts)
-        center_ppm = (min_shift + max_shift) / 2
-        width_ppm = (max_shift - min_shift)
+    spin_rate = params['spin_rate']
 
-        # Ensure minimum width
-        if width_ppm < 10: width_ppm = 10
+    if 'sw' not in kwargs:
+        if shifts:
+            min_shift = min(shifts)
+            max_shift = max(shifts)
+            center_ppm = (min_shift + max_shift) / 2
 
-        # Convert to Hz
-        b0 = None
-        proton_freq = params['proton_frequency']
-        if isinstance(proton_freq, (int, float)):
-            if proton_freq > 1e6:
-                b0 = f"{proton_freq/1e6:.1f}MHz"
+            center_hz = ppm2hz(center_ppm, b0, nucleus)
+            min_hz = ppm2hz(min_shift, b0, nucleus)
+            max_hz = ppm2hz(max_shift, b0, nucleus)
+            width_hz = abs(max_hz - min_hz)
+
+            # Floor at 10 ppm so a single peak gets a usable window
+            nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
+            required_sw = max(width_hz * 2, nu_l_hz * 10e-6)
+
+            # SIMPSON offset ADDS to raw positions; negate to center peaks at 0
+            offset_value = -center_hz
+            if 'variable_offset' not in kwargs:
+                params['variable_offset'] = offset_value
+            if 'variable_ref' not in kwargs:
+                params['variable_ref'] = offset_value
+
+        elif quadrupoles:
+            max_cq = max(quadrupoles)
+            nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
+            if params['detect_operator'] == 'Inc':
+                # CT only: 2nd-order broadening width ∝ Cq²/ν_L
+                required_sw = max_cq ** 2 / nu_l_hz
             else:
-                b0 = f"{proton_freq}MHz"
+                # Full spectrum (Inp): satellite manifold extends to ~|Cq|
+                required_sw = 2.5 * max_cq
 
-        nucleus = '1H' # Default
-        channels_match = re.search(r'channels\s+([\w\s]+)', spinsys_str)
-        if channels_match:
-            nuclei_list = channels_match.group(1).split()
-            if nuclei_list:
-                nucleus = nuclei_list[0]
+        else:
+            raise ValueError(
+                "Cannot auto-estimate spectral width: no 'shift' or 'quadrupole' "
+                "interactions found in spinsys. Provide 'sw' explicitly."
+            )
 
-        # Check for quadrupolar nucleus (spin > 0.5)
-        if not user_detect_op:
-            try:
-                spin = get_spin(nucleus)
-                if spin > 0.5:
-                    params['detect_operator'] = 'Inc'
-            except Exception:
-                pass
+        # Round up to the nearest multiple of spin_rate for MAS; use directly for static
+        if spin_rate > 0:
+            n = max(1, math.ceil(required_sw / spin_rate))
+            sw_hz = n * spin_rate
+        else:
+            sw_hz = required_sw
 
-        # Calculate center frequency for offset and ref
-        # SIMPSON's offset command ADDS to peak positions: raw = true + offset
-        # To center peaks at 0 in raw coordinates, use offset = -center_hz
-        # This way: raw = true + (-center_hz) = true - center_hz ≈ 0 for peaks near center
-        center_hz = ppm2hz(center_ppm, b0, nucleus)
-        offset_value = -center_hz  # Negate to center peaks at 0
-        
-        # Calculate the spectral width needed to cover all peaks
-        # With offset centering peaks at 0, SW only needs to cover the peak width
-        min_hz = ppm2hz(min_shift, b0, nucleus)
-        max_hz = ppm2hz(max_shift, b0, nucleus)
-        width_hz = abs(max_hz - min_hz)
-        required_sw = width_hz * 2
-        
-        # Round SW up to nearest multiple of spinning rate (n * spin_rate)
-        spin_rate = params['spin_rate']
-        n = 1
-        while n * spin_rate < required_sw:
-            n += 1
-        sw_hz = n * spin_rate
-
-        # Update params if not provided by user
-        # Use variable_offset and variable_ref so they become variables in the par block
-        # offset_value centers peaks at 0 in raw coordinates
-        # ref should equal offset_value so that: hz = raw - ref restores true Hz
-        if 'sw' not in kwargs:
-            params['sw'] = sw_hz
-        if 'variable_offset' not in kwargs:
-            params['variable_offset'] = offset_value
-        if 'variable_ref' not in kwargs:
-            params['variable_ref'] = offset_value
+        params['sw'] = sw_hz
 
     # Create calculator and run
     calc = SimpCalc(spinsys, **params)

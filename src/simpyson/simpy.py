@@ -1,73 +1,113 @@
 from __future__ import annotations
 
+import copy as cp
+import logging
+import warnings
+
 import numpy as np
 
 from simpyson.converter import hz2ppm
 
+logger = logging.getLogger("simpyson")
+
 
 class Simpy:
     """
-    A unified container Simpson NMR data that automatically handles conversions between formats.
-    
-    This class stores and manages Simpson's various formasts (FID, Spe in Hz and ppm) and 
-    conversion between them.
-    
-    Attributes:
-        b0: Magnetic field (e.g., '9.4T', '400MHz')
-        nucleus: Nucleus type (e.g., '1H', '13C')
-        
-    Properties:
-        fid: Time-domain data
-        spe: Frequency-domain data (Hz)
-        ppm: Chemical shift data (ppm)
+    Unified container for SIMPSON NMR data with automatic format conversions.
+
+    Stores and manages SIMPSON data in multiple representations (FID, spectrum
+    in Hz, spectrum in ppm) and converts between them lazily on access.
+
+    Parameters
+    ----------
+    b0 : str or None
+        Magnetic field strength (e.g., ``'9.4T'``, ``'400MHz'``).
+        Required for ppm conversion.
+    nucleus : str or None
+        Nucleus type (e.g., ``'1H'``, ``'13C'``).
+        Required for ppm conversion.
+
+    Examples
+    --------
+    >>> from simpyson.io import read_simp
+    >>> data = read_simp("spectrum.spe", b0="400MHz", nucleus="13C")
+    >>> data.spe['hz']   # frequency axis in Hz
+    >>> data.ppm['ppm']  # chemical shift axis in ppm
     """
-    def __init__(self, b0=None, nucleus=None):
+
+    def __init__(self, b0: str | None = None, nucleus: str | None = None) -> None:
         self._b0 = b0
         self._nucleus = nucleus
-        self._fid_data = None  # Time-domain data
-        self._spe_data = None  # Frequency-domain data
-        self._xreim_data = None # xreim data
-        self._metadata = {}
+        self._fid_data: dict | None = None
+        self._spe_data: dict | None = None
+        self._xreim_data: dict | None = None
+        self._metadata: dict = {}
 
     @property
-    def b0(self):
+    def b0(self) -> str | None:
+        """Magnetic field strength."""
         return self._b0
 
     @b0.setter
-    def b0(self, value):
+    def b0(self, value: str | None) -> None:
         self._b0 = value
-        # Invalidate cached ppm data when b0 change
+        # Invalidate cached ppm data when b0 changes
         if self._spe_data and 'ppm' in self._spe_data:
             del self._spe_data['ppm']
 
     @property
-    def nucleus(self):
+    def nucleus(self) -> str | None:
+        """Nucleus type."""
         return self._nucleus
 
     @nucleus.setter
-    def nucleus(self, value):
+    def nucleus(self, value: str | None) -> None:
         self._nucleus = value
-        # Invalidate cached ppm data if nucleus changs
+        # Invalidate cached ppm data if nucleus changes
         if self._spe_data and 'ppm' in self._spe_data:
             del self._spe_data['ppm']
 
     @property
-    def fid(self):
-        """Access time-domain data, converting from spectrum if needed."""
+    def fid(self) -> dict | None:
+        """Access time-domain data, converting from spectrum if needed.
+
+        Returns
+        -------
+        dict or None
+            Dictionary with keys ``'real'``, ``'imag'``, ``'np'``, ``'sw'``,
+            ``'time'`` (in ms), or None if no data is available.
+        """
         if self._fid_data is None and self._spe_data is not None:
             self._compute_fid()
         return self._fid_data
 
     @property
-    def spe(self):
-        """Access frequency-domain data, converting from FID if needed."""
+    def spe(self) -> dict | None:
+        """Access frequency-domain data, converting from FID if needed.
+
+        Returns
+        -------
+        dict or None
+            Dictionary with keys ``'real'``, ``'imag'``, ``'np'``, ``'sw'``,
+            ``'hz'`` (and optionally ``'ppm'``), or None if no data is
+            available.
+        """
         if self._spe_data is None and self._fid_data is not None:
             self._compute_spectrum()
         return self._spe_data
 
     @property
-    def ppm(self):
-        """Access chemical shift data, computing from Hz if needed."""
+    def ppm(self) -> dict | None:
+        """Access chemical shift data, computing from Hz if needed.
+
+        Requires both ``b0`` and ``nucleus`` to be set.
+
+        Returns
+        -------
+        dict or None
+            Dictionary with keys ``'ppm'``, ``'real'``, ``'imag'``, or None
+            if conversion is not possible.
+        """
         if self.spe and 'ppm' not in self.spe and self._b0 and self._nucleus:
             self._compute_ppm()
 
@@ -80,12 +120,18 @@ class Simpy:
         return None
 
     @property
-    def xreim(self):
-        """Access xreim data."""
+    def xreim(self) -> dict | None:
+        """Access xreim data.
+
+        Returns
+        -------
+        dict or None
+            Dictionary with keys ``'time'``, ``'real'``, ``'imag'``, or None.
+        """
         return self._xreim_data
 
-    def _compute_spectrum(self):
-        """Convert FID to spectrum."""
+    def _compute_spectrum(self) -> None:
+        """Convert FID to spectrum via FFT."""
         if not self._fid_data:
             return
 
@@ -102,8 +148,8 @@ class Simpy:
             'hz': np.linspace(-sw/2, sw/2, int(npoints))
         }
 
-    def _compute_fid(self):
-        """Convert spectrum to FID."""
+    def _compute_fid(self) -> None:
+        """Convert spectrum to FID via inverse FFT."""
         if not self._spe_data:
             return
 
@@ -118,11 +164,11 @@ class Simpy:
             'imag': np.imag(time_signal),
             'np': npoints,
             'sw': sw,
-            'time': np.linspace(0, npoints*dt, int(npoints)) * 10e3
+            'time': np.linspace(0, npoints*dt, int(npoints)) * 1e3  # seconds to milliseconds
         }
 
-    def _compute_ppm(self):
-        """Calculate ppm scale from Hz."""
+    def _compute_ppm(self) -> None:
+        """Calculate ppm scale from Hz using b0 and nucleus."""
         if not (self._spe_data and 'hz' in self._spe_data):
             return
 
@@ -132,13 +178,41 @@ class Simpy:
         try:
             self._spe_data['ppm'] = hz2ppm(self._spe_data['hz'], self._b0, self._nucleus)
         except ValueError as e:
-            print(f"Error converting to ppm: {e}")
+            warnings.warn(f"Could not convert to ppm: {e}", stacklevel=2)
 
-    def from_fid(self, real, imag, np_value, sw, time=None):
-        """Set data from FID values."""
+    def from_fid(
+        self,
+        real: np.ndarray | list,
+        imag: np.ndarray | list,
+        np_value: int | float,
+        sw: float,
+        time: np.ndarray | list | None = None,
+    ) -> Simpy:
+        """
+        Populate this object with FID (time-domain) data.
+
+        Parameters
+        ----------
+        real : array_like
+            Real part of the FID signal.
+        imag : array_like
+            Imaginary part of the FID signal.
+        np_value : int or float
+            Number of data points.
+        sw : float
+            Spectral width in Hz.
+        time : array_like or None
+            Time axis in milliseconds. If None, calculated from ``sw`` and
+            ``np_value``.
+
+        Returns
+        -------
+        Simpy
+            Self, for method chaining.
+        """
         if time is None:
             dt = 1.0 / sw
-            time = np.linspace(0, np_value*dt, int(np_value)) * 10e3
+            time = np.linspace(0, np_value*dt, int(np_value)) * 1e3  # seconds to milliseconds
 
         self._fid_data = {
             'real': np.array(real),
@@ -152,10 +226,38 @@ class Simpy:
         self._spe_data = None
         return self
 
-    def from_spe(self, real, imag, np_value, sw, hz=None):
-        """Set data from spectrum values."""
+    def from_spe(
+        self,
+        real: np.ndarray | list,
+        imag: np.ndarray | list,
+        np_value: int | float,
+        sw: float,
+        hz: np.ndarray | list | None = None,
+    ) -> Simpy:
+        """
+        Populate this object with spectrum (frequency-domain) data.
+
+        Parameters
+        ----------
+        real : array_like
+            Real part of the spectrum.
+        imag : array_like
+            Imaginary part of the spectrum.
+        np_value : int or float
+            Number of data points.
+        sw : float
+            Spectral width in Hz.
+        hz : array_like or None
+            Frequency axis in Hz. If None, calculated as a symmetric range
+            around zero based on ``sw``.
+
+        Returns
+        -------
+        Simpy
+            Self, for method chaining.
+        """
         if hz is None:
-            hz = np.linspace(-int(sw) / 2, int(sw) / 2, int(np_value))
+            hz = np.linspace(-sw / 2, sw / 2, int(np_value))
 
         self._spe_data = {
             'real': np.array(real),
@@ -173,9 +275,29 @@ class Simpy:
         self._fid_data = None
         return self
 
-    def from_xreim(self, time, real, imag):
-        """Set data from xreim values."""
+    def from_xreim(
+        self,
+        time: np.ndarray | list,
+        real: np.ndarray | list,
+        imag: np.ndarray | list,
+    ) -> Simpy:
+        """
+        Populate this object with xreim data.
 
+        Parameters
+        ----------
+        time : array_like
+            Time axis.
+        real : array_like
+            Real part of the signal.
+        imag : array_like
+            Imaginary part of the signal.
+
+        Returns
+        -------
+        Simpy
+            Self, for method chaining.
+        """
         self._xreim_data = {
             'time': np.array(time),
             'real': np.array(real),
@@ -187,9 +309,35 @@ class Simpy:
         self._spe_data = None
         return self
 
-    def from_csdf(self, real, imag, hz, np_value, sw):
-        """Set data from CSDF values."""
+    def from_csdf(
+        self,
+        real: np.ndarray | list,
+        imag: np.ndarray | list,
+        hz: np.ndarray | list,
+        np_value: int | float,
+        sw: float,
+    ) -> Simpy:
+        """
+        Populate this object from CSDF (csdmpy) data.
 
+        Parameters
+        ----------
+        real : array_like
+            Real part of the spectrum.
+        imag : array_like
+            Imaginary part of the spectrum.
+        hz : array_like
+            Frequency axis in Hz.
+        np_value : int or float
+            Number of data points.
+        sw : float
+            Spectral width in Hz.
+
+        Returns
+        -------
+        Simpy
+            Self, for method chaining.
+        """
         self._spe_data = {
             'real': np.array(real),
             'imag': np.array(imag),
@@ -204,10 +352,15 @@ class Simpy:
         self._fid_data = None
         return self
 
-    def copy(self):
-        """Create a copy of a Simpy object."""
-        import copy as cp
+    def copy(self) -> Simpy:
+        """
+        Create a deep copy of this Simpy object.
 
+        Returns
+        -------
+        Simpy
+            Independent copy with all data arrays duplicated.
+        """
         new_obj = Simpy(b0=self._b0, nucleus=self._nucleus)
 
         if self._fid_data is not None:
@@ -223,16 +376,26 @@ class Simpy:
 
         return new_obj
 
-    def write(self, filename, format='csv'):
+    def write(self, filename: str, format: str = 'csv') -> Simpy:
         """
-        Write data to file in specified format.
-        
-        Args:
-            filename: Output filename
-            format: Format to save as ('csv', 'fid', 'spe')
-            
-        Returns:
-            self for method chaining
+        Write data to file in the specified format.
+
+        Parameters
+        ----------
+        filename : str
+            Output file path.
+        format : str
+            Output format. One of ``'csv'``, ``'spe'``, ``'fid'``, ``'xreim'``.
+
+        Returns
+        -------
+        Simpy
+            Self, for method chaining.
+
+        Raises
+        ------
+        ValueError
+            If the format is unsupported or no data is available.
         """
         # CSV format
         if format == 'csv':
@@ -287,8 +450,8 @@ class Simpy:
             f.write(f'TYPE={data_type}\n')
             f.write('DATA\n')
 
-            for re, im in zip(data_dict['real'], data_dict['imag']):
-                f.write(f'{re} {im}\n')
+            for re_val, im_val in zip(data_dict['real'], data_dict['imag']):
+                f.write(f'{re_val} {im_val}\n')
 
             f.write('END')
 

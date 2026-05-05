@@ -5,7 +5,15 @@ import argparse
 from simpyson.gui import main as gui_main
 
 
-def main():
+def main() -> None:
+    """
+    Entry point for the ``simpyson`` command-line interface.
+
+    Subcommands
+    -----------
+    gui
+        Launch the simpyson GUI. Optionally pass file paths to open on start.
+    """
     parser = argparse.ArgumentParser(prog="simpyson")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -18,4 +26,3 @@ def main():
         args.func(args)
     else:
         parser.print_help()
-

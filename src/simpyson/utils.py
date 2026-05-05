@@ -10,112 +10,173 @@ from soprano.properties.nmr.dipolar import DipolarCoupling
 from soprano.selection import AtomSelection
 
 
-def get_gamma(nucleus, isotope_file=None):
-    """
-    Get gyromagnetic ratio for a given nucleus.
-    
-    Args:
-        nucleus (str): Nucleus type (e.g., '1H' or '13C')
-        isotope_file (str, optional): Path to isotope data file. If None, uses default.
+def _default_isotope_file() -> str:
+    """Return the path to the bundled isotope data JSON file."""
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'isotope_data.json')
 
-    Returns:
-        float: Gyromagnetic ratio in Hz/T
+
+def _load_isotope_data(nucleus: str, isotope_file: str | None = None) -> dict:
+    """
+    Parse a nucleus string and load its isotope data row.
+
+    Parameters
+    ----------
+    nucleus : str
+        Nucleus type (e.g., ``'1H'``, ``'13C'``, ``'23Na'``).
+    isotope_file : str or None
+        Path to isotope data JSON file. If None, uses the bundled default.
+
+    Returns
+    -------
+    dict
+        The isotope data row (contains keys like ``'Gamma'``, ``'Spin'``).
+
+    Raises
+    ------
+    ValueError
+        If the nucleus is not found in the isotope data.
     """
     if isotope_file is None:
-        dir = os.path.dirname(os.path.realpath(__file__))
-        isotope_file = os.path.join(dir, 'isotope_data.json')
+        isotope_file = _default_isotope_file()
 
-    isotope = int(''.join(filter(str.isdigit, nucleus)))
+    mass_number = int(''.join(filter(str.isdigit, nucleus)))
     element = ''.join(filter(str.isalpha, nucleus)).capitalize()
 
     with open(isotope_file) as f:
         data = json.load(f)
-        if element in data and str(isotope) in data[element]:
-            gamma = data[element][str(isotope)]['Gamma']
-        else:
-            raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
 
-    return gamma
+    if element in data and str(mass_number) in data[element]:
+        return data[element][str(mass_number)]
 
-def get_spin(nucleus, isotope_file=None):
+    raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
+
+
+def get_gamma(nucleus: str, isotope_file: str | None = None) -> float:
     """
-    Get spin quantum number for a given nucleus.
-    
-    Args:
-        nucleus (str): Nucleus type (e.g., '1H' or '13C')
-        isotope_file (str, optional): Path to isotope data file. If None, uses default.
+    Get the gyromagnetic ratio for a given nucleus.
 
-    Returns:
-        float: Spin quantum number (e.g. 0.5, 1.0, 1.5)
+    Parameters
+    ----------
+    nucleus : str
+        Nucleus type (e.g., ``'1H'``, ``'13C'``).
+    isotope_file : str or None
+        Path to isotope data JSON file. If None, uses the bundled default.
+
+    Returns
+    -------
+    float
+        Gyromagnetic ratio in rad/(s*T) * 1e-7 (the value stored in the
+        isotope data file).
+
+    Raises
+    ------
+    ValueError
+        If the nucleus is not found in the isotope data.
     """
-    if isotope_file is None:
-        dir = os.path.dirname(os.path.realpath(__file__))
-        isotope_file = os.path.join(dir, 'isotope_data.json')
+    return _load_isotope_data(nucleus, isotope_file)['Gamma']
 
-    isotope = int(''.join(filter(str.isdigit, nucleus)))
-    element = ''.join(filter(str.isalpha, nucleus)).capitalize()
 
-    with open(isotope_file) as f:
-        data = json.load(f)
-        if element in data and str(isotope) in data[element]:
-            spin_str = data[element][str(isotope)]['Spin']
-            # Spin is usually a string like "1/2" or "3/2" or integer "1"
-            if '/' in str(spin_str):
-                num, den = spin_str.split('/')
-                return float(num) / float(den)
-            else:
-                return float(spin_str)
-        else:
-            raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
-
-def get_larmor_freq(b0, nucleus, isotope_file=None):
+def get_spin(nucleus: str, isotope_file: str | None = None) -> float:
     """
-    Convert Hz values to ppm values.
-    
-    Args:
-        b0 (str): Magnetic field strength (e.g., '400MHz' or '9.4T')
-        nucleus (str): Nucleus type (e.g., '1H' or '13C')
-        isotope_file (str, optional): Path to isotope data file. If None, uses default.
-    
-    Returns:
-        float: Larmor Frequency
-        
-    Raises:
-        ValueError: If B0 unit is invalid or nucleus not found
+    Get the spin quantum number for a given nucleus.
+
+    Parameters
+    ----------
+    nucleus : str
+        Nucleus type (e.g., ``'1H'``, ``'23Na'``).
+    isotope_file : str or None
+        Path to isotope data JSON file. If None, uses the bundled default.
+
+    Returns
+    -------
+    float
+        Spin quantum number (e.g., 0.5 for spin-1/2, 1.5 for spin-3/2).
+
+    Raises
+    ------
+    ValueError
+        If the nucleus is not found in the isotope data.
     """
+    spin_str = _load_isotope_data(nucleus, isotope_file)['Spin']
+    if '/' in str(spin_str):
+        num, den = spin_str.split('/')
+        return float(num) / float(den)
+    return float(spin_str)
 
-    if isotope_file is None:
-        dir = os.path.dirname(os.path.realpath(__file__))
-        isotope_file = os.path.join(dir, 'isotope_data.json')
 
-    isotope = int(''.join(filter(str.isdigit, nucleus)))
-    element = ''.join(filter(str.isalpha, nucleus)).capitalize()
+def get_larmor_freq(b0: str, nucleus: str, isotope_file: str | None = None) -> float:
+    """
+    Calculate the Larmor frequency for a given nucleus at a given field strength.
+
+    Parameters
+    ----------
+    b0 : str
+        Magnetic field strength (e.g., '400MHz' or '9.4T').
+    nucleus : str
+        Nucleus type (e.g., '1H' or '13C').
+    isotope_file : str, optional
+        Path to isotope data file. If None, uses the bundled default.
+
+    Returns
+    -------
+    float
+        Larmor frequency in MHz.
+
+    Raises
+    ------
+    ValueError
+        If B0 unit is not 'T' or 'MHz', or if the nucleus is not found.
+    """
+    gamma = get_gamma(nucleus, isotope_file=isotope_file)
     b0_unit = ''.join(filter(str.isalpha, b0)).lower()
+    b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0)))
 
-    with open(isotope_file) as f:
-        data = json.load(f)
-        if element in data and str(isotope) in data[element]:
-            gamma = get_gamma(nucleus, isotope_file=isotope_file)
-        else:
-            raise ValueError(f'Nucleus {nucleus} not found in isotope data.')
-
+    # gamma is stored as gamma / 1e7 in the isotope data file,
+    # so gamma * 1e7 gives the true value in rad/(s*T).
     if b0_unit == 't':
-        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0)))
         larmor_freq = gamma * 1e7 * b0_value / (2 * np.pi * 1e6)
     elif b0_unit == 'mhz':
-        b0_value = float(''.join(filter(lambda x: x.isdigit() or x == '.', b0)))
         gamma_h = get_gamma('1H', isotope_file=isotope_file)
-        b0_value_T = 2 * np.pi * b0_value * 1e6 / (gamma_h * 1e7)
-        larmor_freq = gamma * 1e7 * b0_value_T / (2 * np.pi * 1e6)
+        b0_tesla = 2 * np.pi * b0_value * 1e6 / (gamma_h * 1e7)
+        larmor_freq = gamma * 1e7 * b0_tesla / (2 * np.pi * 1e6)
     else:
         raise ValueError('B0 unit must be T or MHz.')
 
     return larmor_freq
 
-def add_spectra(spectra_list, b0=None, nucleus=None):
-    """Combine multiple Simpy objects into a single spectrum."""
+def add_spectra(spectra_list: list, b0: str | None = None, nucleus: str | None = None):
+    """
+    Combine multiple Simpy objects into a single spectrum by summing.
+
+    Parameters
+    ----------
+    spectra_list : list of Simpy
+        Spectra to combine. All must have compatible frequency-domain data.
+    b0 : str, optional
+        Magnetic field override (e.g., '400MHz').
+    nucleus : str, optional
+        Nucleus override (e.g., '1H').
+
+    Returns
+    -------
+    Simpy or None
+        Combined spectrum, or None if the input list is empty.
+
+    Raises
+    ------
+    ValueError
+        If any spectrum in the list has no frequency-domain data.
+    """
     if not spectra_list:
         return None
+
+    # Validate spectra have frequency-domain data
+    spe_data_list = []
+    for i, spectrum in enumerate(spectra_list, start=1):
+        spe = spectrum.spe
+        if spe is None:
+            raise ValueError(f"Spectrum #{i} has no frequency-domain data to combine.")
+        spe_data_list.append(spe)
 
     result = spectra_list[0].copy()
 
@@ -124,52 +185,113 @@ def add_spectra(spectra_list, b0=None, nucleus=None):
     if nucleus:
         result.nucleus = nucleus
 
-    for spectrum in spectra_list[1:]:
-        result._spe_data['real'] += spectrum.spe['real']
-        result._spe_data['imag'] += spectrum.spe['imag']
+    if len(spectra_list) == 1:
+        return result
+
+    # Check whether all spectra share the same Hz axis
+    ref_hz = spe_data_list[0]['hz']
+    axes_match = all(
+        len(spe['hz']) == len(ref_hz) and np.allclose(spe['hz'], ref_hz)
+        for spe in spe_data_list[1:]
+    )
+
+    if axes_match:
+        # Fast path: identical Hz axes, just sum element-wise
+        for spe in spe_data_list[1:]:
+            result.spe['real'] += spe['real']
+            result.spe['imag'] += spe['imag']
+    else:
+        # Interpolate all spectra onto a common Hz grid
+        hz_min = min(spe['hz'][0] for spe in spe_data_list)
+        hz_max = max(spe['hz'][-1] for spe in spe_data_list)
+
+        # Use the smallest Hz step among all spectra
+        steps = [spe['sw'] / spe['np'] for spe in spe_data_list]
+        finest_step = min(steps)
+
+        n_common = int(np.ceil((hz_max - hz_min) / finest_step)) + 1
+        common_hz = np.linspace(hz_min, hz_max, n_common)
+
+        # Interpolate and sum all spectra on common grid
+        sum_real = np.zeros(n_common)
+        sum_imag = np.zeros(n_common)
+
+        for spe in spe_data_list:
+            sum_real += np.interp(common_hz, spe['hz'], spe['real'],
+                                  left=0.0, right=0.0)
+            sum_imag += np.interp(common_hz, spe['hz'], spe['imag'],
+                                  left=0.0, right=0.0)
+
+        common_sw = common_hz[-1] - common_hz[0]
+        result.from_spe(sum_real, sum_imag, n_common, common_sw, common_hz)
 
     if result.b0 and result.nucleus:
         result._compute_ppm()
 
     return result
 
-# Code adapted from soprano to construct
-# simple spin systems by hand
 def simple_spinsys(
-    atoms,
-    isotopes,
-    iso_ms=None,
-    aniso_ms=None,
-    eta_ms=None,
-    euler_ms=None,
-    cq=None,
-    eta_q=None,
-    q_order=None,
-    euler_q=None,
-    get_dipolar=False,
-    dip_sel=None,
-    obs_nuc=None,
-):
+    atoms: object,
+    isotopes: dict,
+    iso_ms: list | None = None,
+    aniso_ms: list | None = None,
+    eta_ms: list | None = None,
+    euler_ms: list | None = None,
+    cq: list | None = None,
+    eta_q: list | None = None,
+    q_order: list | None = None,
+    euler_q: list | None = None,
+    get_dipolar: bool = False,
+    dip_sel: object | None = None,
+    obs_nuc: str | None = None,
+) -> str:
     """
-    Generates a SIMPSON .spinsys file string from directly provided NMR parameters.
+    Build a SIMPSON spinsys string from manually provided NMR parameters.
 
-    Args:
-        atoms (ase.Atoms): Atoms to be considered.
-        isotopes (dict): A dictionary mapping element to isotopes.
-        iso_ms (list, optional): List of isotropic chemical shifts (ppm).
-        aniso_ms (list, optional): List of shielding anisotropies (ppm).
-        eta_ms (list, optional): List of shielding asymmetries.
-        euler_ms (list, optional): List of Euler angles (alpha, beta, gamma) in degrees for shielding.
-        cq (list, optional): List of quadrupolar coupling constants (Hz).
-        eta_q (list, optional): List of quadrupolar asymmetry parameters.
-        q_order (list, optional): List of quadrupolar orders (<=2).
-        euler_q (list, optional): List of Euler angles (alpha, beta, gamma) in degrees for EFG.
-        get_dipolar (bool, optional): If True, calculate and include dipolar couplings.
-        dip_sel (AtomSelection, optional): Selection of atoms for dipolar couplings. Defaults to all.
-        obs_nuc (str, optional): The nucleus to be observed.
+    Use this when you don't have DFT-derived data and want to construct a
+    spin system by hand (e.g., for quick tests or educational purposes).
+    For DFT-derived spin systems, use Soprano instead.
 
-    Returns:
-        str: The contents of the .spinsys file as a string.
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Atoms object defining the molecular structure.
+    isotopes : dict
+        Mapping of element symbol to mass number (e.g., ``{'H': 1, 'C': 13}``).
+    iso_ms : list of float or None
+        Isotropic chemical shifts in ppm, one per atom.
+    aniso_ms : list of float or None
+        Shielding anisotropies in ppm. Defaults to zeros.
+    eta_ms : list of float or None
+        Shielding asymmetry parameters. Defaults to zeros.
+    euler_ms : list of array_like or None
+        Euler angles ``(alpha, beta, gamma)`` in degrees for the shielding
+        tensor. Defaults to zeros.
+    cq : list of float or None
+        Quadrupolar coupling constants in Hz.
+    eta_q : list of float or None
+        Quadrupolar asymmetry parameters. Defaults to zeros.
+    q_order : list of int or None
+        Quadrupolar perturbation orders (must be <= 2). Defaults to 2.
+    euler_q : list of array_like or None
+        Euler angles ``(alpha, beta, gamma)`` in degrees for the EFG tensor.
+        Defaults to zeros.
+    get_dipolar : bool
+        If True, calculate and include dipolar couplings.
+    dip_sel : AtomSelection or None
+        Selection of atoms for dipolar couplings. Defaults to all atoms.
+    obs_nuc : str or None
+        Observed nucleus (e.g., ``'13C'``). Placed first in the channels list.
+
+    Returns
+    -------
+    str
+        Complete SIMPSON spinsys block as a string.
+
+    Raises
+    ------
+    ValueError
+        If a quadrupolar order exceeds 2.
     """
 
     # Header Block

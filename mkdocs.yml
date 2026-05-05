@@ -7,8 +7,9 @@ nav:
   - Installation:
       - installation/install.md
   - User Guide:
-      - Prepare Simpson simulations: user_guide/write_simpson.ipynb
-      - Read Simpson files: user_guide/read_files.ipynb
+      - Reading SIMPSON files: user_guide/01_reading_files.ipynb
+      - A Simpson python calculator: user_guide/02_simulation_calculator.ipynb
+      - From DFT to SIMPSON: user_guide/03_dft_to_simpson.ipynb
   - Code Documentation: reference/
   - About:
       - about/contributors.md
