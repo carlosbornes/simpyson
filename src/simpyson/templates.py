@@ -214,8 +214,8 @@ class CustomPulseSequence(PulseSequenceTemplate):
         required = self.get_required_parameters()
         filtered_kwargs = {}
         for k, v in kwargs.items():
-            # Check if parameter is required with variable_ prefix
-            if f"variable_{k}" in required:
+            # Accept both already-prefixed keys and unprefixed keys
+            if k in required or f"variable_{k}" in required:
                 filtered_kwargs[k] = v
 
         super().__init__(**filtered_kwargs)

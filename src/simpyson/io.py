@@ -49,18 +49,24 @@ def read_simp(
     OSError
         If the file cannot be read or parsed.
     """
-    # Try to guess format
-    ext = os.path.splitext(filename)[1].lower()
-    if ext == '.spe':
-        format = 'spe'
-    elif ext == '.fid':
-        format = 'fid'
-    elif ext == '.xreim':
-        format = 'xreim'
-    elif ext == '.csdf':
-        format = 'csdf'
+    supported_formats = {'spe', 'fid', 'xreim', 'csdf'}
+
+    if format is not None:
+        format = format.lower()
+        if format not in supported_formats:
+            raise ValueError(f"Unsupported format {format}")
     else:
-        raise ValueError(f"Cannot determine file format of {filename}")
+        ext = os.path.splitext(filename)[1].lower()
+        if ext == '.spe':
+            format = 'spe'
+        elif ext == '.fid':
+            format = 'fid'
+        elif ext == '.xreim':
+            format = 'xreim'
+        elif ext == '.csdf':
+            format = 'csdf'
+        else:
+            raise ValueError(f"Cannot determine file format of {filename}")
 
     simpy_data = Simpy(b0=b0, nucleus=nucleus)
 
