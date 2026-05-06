@@ -1,9 +1,7 @@
 name: docs
 on:
   push:
-    branches:
-      - main
-      - v0.2-dev
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -36,18 +34,6 @@ jobs:
           pip install mknotebooks
           uv pip install --system "simpyson[docs] @ ."
 
-      #- name: Build docs
-      #  run: |
-      #    if [ "${{ github.event_name }}" == "pull_request" ]; then
-      #      mkdocs build --strict
-      #    else
-      #      mkdocs build
-      #    fi
-      #  id: build_docs
-
-      #- name: Rebuild and deploy docs
-      #  run: mkdocs gh-deploy --force
-      #  if: github.ref == 'refs/heads/main' && steps.build_docs.outcome == 'success'
 
       - name: Configure Git User
         run: |
