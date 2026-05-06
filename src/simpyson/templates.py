@@ -69,7 +69,8 @@ class NoPulse(PulseSequenceTemplate):
 
     def get_default_parameters(self) -> Dict[str, Any]:
         return {
-            'variable_tsw': '1e6/sw'
+            'variable_tsw': '1e6/sw',
+            'variable_offset': 0.0
         }
 
     def get_required_parameters(self) -> Set[str]:

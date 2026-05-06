@@ -145,7 +145,7 @@ class Simpy:
             'imag': np.imag(spectrum),
             'np': npoints,
             'sw': sw,
-            'hz': np.linspace(-sw/2, sw/2, int(npoints))
+            'hz': sw * (np.arange(int(npoints)) / int(npoints) - 0.5)
         }
 
     def _compute_fid(self) -> None:
@@ -164,7 +164,7 @@ class Simpy:
             'imag': np.imag(time_signal),
             'np': npoints,
             'sw': sw,
-            'time': np.linspace(0, npoints*dt, int(npoints)) * 1e3  # seconds to milliseconds
+            'time': np.arange(int(npoints)) * dt * 1e3 # seconds to milliseconds
         }
 
     def _compute_ppm(self) -> None:
@@ -257,7 +257,7 @@ class Simpy:
             Self, for method chaining.
         """
         if hz is None:
-            hz = np.linspace(-sw / 2, sw / 2, int(np_value))
+            hz = sw * (np.arange(int(np_value)) / int(np_value) - 0.5)
 
         self._spe_data = {
             'real': np.array(real),
