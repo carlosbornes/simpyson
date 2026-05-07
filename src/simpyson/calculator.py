@@ -13,6 +13,7 @@ from pathlib import Path
 from simpyson.converter import ppm2hz
 from simpyson.io import read_simp
 from simpyson.templates import (
+    CPMAS,
     CustomPulseSequence,
     PulseSequenceTemplate,
     get_template,
@@ -77,6 +78,22 @@ def _extract_nucleus(spinsys_str):
     if nuclei_match:
         return nuclei_match.group(1)
     return None
+
+
+def _extract_turnoff_interactions(spinsys_str: str) -> list[str]:
+    """
+    Return the interaction names present in a spinsys block.
+
+    Scans for ``dipole`` and ``jcoupling`` lines and returns the names in the
+    form expected by SIMPSON's ``turnoff`` command (e.g. ``dipole_1_2``).
+    """
+    interactions = []
+    pattern = re.compile(r'(dipole|jcoupling)\s+(\d+)\s+(\d+)', re.IGNORECASE)
+    for line in spinsys_str.splitlines():
+        m = pattern.match(line.strip())
+        if m:
+            interactions.append(f"{m.group(1).lower()}_{m.group(2)}_{m.group(3)}")
+    return interactions
 
 
 class SimpCalc:
@@ -303,6 +320,16 @@ class SimpCalc:
             # Return empty pulseq block if no sequence provided
             return "proc pulseq {} {}\n"
 
+        # Lazily populate CPMAS turnoff list from the spinsys so this works
+        # even when a CPMAS instance is passed directly to SimpCalc.
+        if isinstance(self.pulse_sequence, CPMAS) and not self.pulse_sequence.turnoff_interactions:
+            spinsys_str = self.spinsys
+            if hasattr(spinsys_str, 'to_simpson'):
+                spinsys_str = spinsys_str.to_simpson()
+            self.pulse_sequence.turnoff_interactions = _extract_turnoff_interactions(
+                str(spinsys_str)
+            )
+
         return self.pulse_sequence.generate_code()
 
     def generate_main(self) -> str:
@@ -328,10 +355,10 @@ class SimpCalc:
                      self.output_config.get('name', '$par(name)'))
 
         lb = self.parameters.get('lb',
-             self.output_config.get('lb', 0))
+             self.output_config.get('lb', 20))
 
         zerofill = self.parameters.get('zerofill',
-                  self.output_config.get('zerofill', 0))
+                  self.output_config.get('zerofill', self.parameters.get('np', 0)))
 
 
         indent = "    "
@@ -391,8 +418,8 @@ proc main {{}} {{
         self,
         filepath: str | None = None,
         timeout: int | None = None,
-        read_output: bool = False,
-        delete_files: bool = False,
+        read_output: bool = True,
+        delete_files: bool = True,
         b0: str | None = None,
         nucleus: str | None = None,
         simpson_path: str | None = None,
@@ -408,9 +435,10 @@ proc main {{}} {{
         timeout : int or None
             Timeout in seconds for the SIMPSON process.
         read_output : bool
-            If True, read the output file and return a Simpy object.
+            If True (default), read the output file and return a Simpy object.
+            If False, return SIMPSON's stdout as a string.
         delete_files : bool
-            If True, delete input and output files after reading.
+            If True (default), delete input and output files after reading.
         b0 : str or None
             Magnetic field strength (e.g., ``'400MHz'``). Auto-derived from
             ``proton_frequency`` if not provided. Only used with
@@ -525,9 +553,22 @@ proc main {{}} {{
                 if b0 is None and 'proton_frequency' in self.parameters:
                     b0 = _proton_freq_to_b0(self.parameters['proton_frequency'])
 
-                # Auto-extract nucleus information if not provided
+                # Auto-extract nucleus information if not provided.
+                # Use detect_operator (e.g. 'I2p') to identify, nucleus compare with spinsys nuclei list.
+                # Falls back to the first channel for global operators ('Inp', 'Inc').
                 if nucleus is None:
-                    nucleus = _extract_nucleus(self.generate_spinsys())
+                    spinsys_str = self.generate_spinsys()
+                    detect_op = self.parameters.get('detect_operator', '')
+                    indices = re.findall(r'I(\d+)', detect_op)
+                    if indices:
+                        nuclei_match = re.search(r'nuclei\s+([\w\s]+)', spinsys_str)
+                        if nuclei_match:
+                            nuclei_list = nuclei_match.group(1).split()
+                            idx = int(indices[0]) - 1  # SIMPSON is 1-indexed
+                            if 0 <= idx < len(nuclei_list):
+                                nucleus = nuclei_list[idx]
+                    if nucleus is None:
+                        nucleus = _extract_nucleus(spinsys_str)
 
                 # Read the output file
                 return read_simp(output_file, format=out_format, b0=b0, nucleus=nucleus)

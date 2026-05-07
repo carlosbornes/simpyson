@@ -144,6 +144,11 @@ class CPMAS(PulseSequenceTemplate):
         dw (str): Dwell time expression. Default: '1.0e6/spin_rate/gamma_angles'
     """
 
+    def __init__(self, **kwargs):
+        # Populated by SimpCalc from the actual spinsys before generate_code() is called.
+        self.turnoff_interactions: list[str] = []
+        super().__init__(**kwargs)
+
     def get_default_parameters(self) -> dict[str, Any]:
         return {
             'variable_p1H': 5.0,
@@ -169,18 +174,21 @@ class CPMAS(PulseSequenceTemplate):
         return "Cross-polarization magic angle spinning"
 
     def generate_code(self) -> str:
-        return """
-proc pulseq {} {
-    global par
-    reset
-    pulse $par(p1H) $par(pl1H) $par(ph1H) 0 0
-    pulse $par(pcp) $par(plHcp) $par(phHcp) $par(plCcp) $par(phCcp)
-    turnoff dipole_1_2 jcoupling_1_2
-    acq_block {
-        delay $par(dw)
-    }
-}
-"""
+        turnoff_line = (
+            f"    turnoff {' '.join(self.turnoff_interactions)}\n"
+            if self.turnoff_interactions else ""
+        )
+        return (
+            "\nproc pulseq {} {\n"
+            "    global par\n"
+            "    reset\n"
+            "    pulse $par(pcp) $par(plHcp) $par(phHcp) $par(plCcp) $par(phCcp)\n"
+            + turnoff_line
+            + "    acq_block {\n"
+            "        delay $par(dw)\n"
+            "    }\n"
+            "}\n"
+        )
 
 pulseq_templates = {
     'no_pulse': NoPulse,
