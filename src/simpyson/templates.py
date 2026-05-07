@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Set
+from typing import Any
 
 
 class PulseSequenceTemplate(ABC):
@@ -11,7 +11,7 @@ class PulseSequenceTemplate(ABC):
     def __init__(self, **kwargs):
         """
         Initialize pulse sequence template.
-        
+
         Args:
             **kwargs: Parameters to override defaults (without variable_ prefix)
         """
@@ -29,11 +29,11 @@ class PulseSequenceTemplate(ABC):
         self.validate_parameters()
 
     @abstractmethod
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         """Return default parameters for this pulse sequence (with variable_ prefix)"""
 
     @abstractmethod
-    def get_required_parameters(self) -> Set[str]:
+    def get_required_parameters(self) -> set[str]:
         """Return set of required parameter names (with variable_ prefix)"""
 
     def validate_parameters(self):
@@ -46,7 +46,7 @@ class PulseSequenceTemplate(ABC):
     def update_parameters(self, **kwargs):
         """
         Update parameters and re-validate.
-        
+
         Args:
             **kwargs: Parameters to update (without variable_ prefix)
         """
@@ -62,18 +62,18 @@ class PulseSequenceTemplate(ABC):
 class NoPulse(PulseSequenceTemplate):
     """
     No pulse sequence - direct acquisition.
-    
+
     Parameters:
         tsw (float): Sweep time in microseconds. Default: 1e4
     """
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             'variable_tsw': '1e6/sw',
             'variable_offset': 0.0
         }
 
-    def get_required_parameters(self) -> Set[str]:
+    def get_required_parameters(self) -> set[str]:
         return {'variable_tsw'}
 
     @property
@@ -94,7 +94,7 @@ proc pulseq {} {
 class Pulse90(PulseSequenceTemplate):
     """
     Single 90° pulse on 1H.
-    
+
     Parameters:
         pH (float): Pulse length in microseconds. Default: 5.0
         plH (float): Pulse power in Hz. Default: 50000
@@ -102,7 +102,7 @@ class Pulse90(PulseSequenceTemplate):
         tsw (float): Sweep time in microseconds. Default: 1e4
     """
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             'variable_pH': 5.0,
             'variable_plH': 50000,
@@ -110,7 +110,7 @@ class Pulse90(PulseSequenceTemplate):
             'variable_tsw': '1e6/sw'
         }
 
-    def get_required_parameters(self) -> Set[str]:
+    def get_required_parameters(self) -> set[str]:
         return {'variable_pH', 'variable_plH', 'variable_phH', 'variable_tsw'}
 
     @property
@@ -131,7 +131,7 @@ proc pulseq {} {
 class CPMAS(PulseSequenceTemplate):
     """
     Cross-polarization magic angle spinning sequence.
-    
+
     Parameters:
         p1H (float): 1H 90° pulse length in μs. Default: 5.0
         pl1H (float): 1H 90° pulse power in Hz. Default: 50000
@@ -144,7 +144,7 @@ class CPMAS(PulseSequenceTemplate):
         dw (str): Dwell time expression. Default: '1.0e6/spin_rate/gamma_angles'
     """
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             'variable_p1H': 5.0,
             'variable_pl1H': 50000,
@@ -157,7 +157,7 @@ class CPMAS(PulseSequenceTemplate):
             'variable_dw': '1e6/spin_rate/gamma_angles'
         }
 
-    def get_required_parameters(self) -> Set[str]:
+    def get_required_parameters(self) -> set[str]:
         return {
             'variable_p1H', 'variable_pl1H', 'variable_ph1H',
             'variable_pcp', 'variable_plHcp', 'variable_phHcp',
@@ -176,7 +176,7 @@ proc pulseq {} {
     pulse $par(p1H) $par(pl1H) $par(ph1H) 0 0
     pulse $par(pcp) $par(plHcp) $par(phHcp) $par(plCcp) $par(phCcp)
     turnoff dipole_1_2 jcoupling_1_2
-    acq_block { 
+    acq_block {
         delay $par(dw)
     }
 }
@@ -191,11 +191,11 @@ pulseq_templates = {
 def get_template(name: str, **kwargs) -> PulseSequenceTemplate:
     """
     Get a pulse sequence template by name.
-    
+
     Args:
         name: Template name ('no_pulse', 'pulse_90', 'cp_mas')
         **kwargs: Parameters to override defaults
-        
+
     Returns:
         PulseSequenceTemplate: Configured template instance
     """
@@ -221,10 +221,10 @@ class CustomPulseSequence(PulseSequenceTemplate):
 
         super().__init__(**filtered_kwargs)
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {}
 
-    def get_required_parameters(self) -> Set[str]:
+    def get_required_parameters(self) -> set[str]:
         # Extract parameter names from the code using regex
         params = set()
         pattern = r'\$par\(([^)]+)\)'

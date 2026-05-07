@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import ase.io
 import numpy as np
 import scipy.constants as const
@@ -55,7 +57,7 @@ def read_vasp(file: str, format: str) -> ase.Atoms:
     n_atoms = atoms.get_global_number_of_atoms()
     np.set_printoptions(suppress=True)
 
-    with open(file) as outcar:
+    with Path(file).open() as outcar:
         lines = outcar.readlines()
 
     # Locate required OUTCAR sections
@@ -175,10 +177,7 @@ def hz2ppm(
         If the B0 unit is invalid or the nucleus is not found.
     """
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
-
-    ppm = -hz / larmor_freq
-
-    return ppm
+    return hz / larmor_freq
 
 
 def ppm2hz(
@@ -212,7 +211,4 @@ def ppm2hz(
         If the B0 unit is invalid or the nucleus is not found.
     """
     larmor_freq = get_larmor_freq(b0, nucleus, isotope_file)
-
-    hz = -ppm * larmor_freq
-
-    return hz
+    return ppm * larmor_freq

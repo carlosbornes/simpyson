@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
+from pathlib import Path
 
 import numpy as np
 from soprano.calculate.nmr.simpson import _header_template, _spinsys_template
@@ -12,7 +12,7 @@ from soprano.selection import AtomSelection
 
 def _default_isotope_file() -> str:
     """Return the path to the bundled isotope data JSON file."""
-    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'isotope_data.json')
+    return str(Path(__file__).parent / 'isotope_data.json')
 
 
 def _load_isotope_data(nucleus: str, isotope_file: str | None = None) -> dict:
@@ -42,7 +42,7 @@ def _load_isotope_data(nucleus: str, isotope_file: str | None = None) -> dict:
     mass_number = int(''.join(filter(str.isdigit, nucleus)))
     element = ''.join(filter(str.isalpha, nucleus)).capitalize()
 
-    with open(isotope_file) as f:
+    with Path(isotope_file).open() as f:
         data = json.load(f)
 
     if element in data and str(mass_number) in data[element]:
@@ -297,7 +297,7 @@ def simple_spinsys(
     # Header Block
     symbols = atoms.get_chemical_symbols()
     isotope_list = _get_isotope_list(symbols, isotopes=isotopes)
-    nuclei = [f"{iso}{el}" for el, iso in zip(symbols, isotope_list)]
+    nuclei = [f"{iso}{el}" for el, iso in zip(symbols, isotope_list, strict=False)]
 
     if obs_nuc and obs_nuc in nuclei:
         channels = [obs_nuc] + [n for n in sorted(set(nuclei)) if n != obs_nuc]
@@ -317,7 +317,7 @@ def simple_spinsys(
         euler_ms_vals = euler_ms if euler_ms is not None else np.zeros((num_atoms, 3))
 
         for i in range(num_atoms):
-            ms_block += "shift {0} {1}p {2}p {3} {4} {5} {6}\n".format(
+            ms_block += "shift {} {}p {}p {} {} {} {}\n".format(
                 i + 1,
                 iso_ms[i],
                 aniso_ms_vals[i],
@@ -339,11 +339,11 @@ def simple_spinsys(
                         raise ValueError(
                             f"Quadrupolar order must be 2 or less, got {q_order[i]} for atom {i+1}"
                         )
-                    efg_block += "quadrupole {0} {1} {2} {3} {4} {5} {6}\n".format(
+                    efg_block += "quadrupole {} {} {} {} {} {} {}\n".format(
                         i + 1, q_order[i], cq[i], eta_q_vals[i], *euler_q_vals[i]
                     )
                 else:
-                    efg_block += "quadrupole {0} 2 {1} {2} {3} {4} {5}\n".format(
+                    efg_block += "quadrupole {} 2 {} {} {} {} {}\n".format(
                         i + 1, cq[i], eta_q_vals[i], *euler_q_vals[i]
                     )
 

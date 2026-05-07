@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy as cp
 import logging
 import warnings
+from pathlib import Path
 
 import numpy as np
 
@@ -441,7 +442,7 @@ class Simpy:
             raise ValueError(f"No data available to save in {format} format")
 
         # Write SIMPSON format file
-        with open(filename, 'w') as f:
+        with Path(filename).open('w') as f:
             f.write('SIMP\n')
             if 'np' in data_dict:
                 f.write(f'NP={data_dict["np"]}\n')
@@ -450,7 +451,7 @@ class Simpy:
             f.write(f'TYPE={data_type}\n')
             f.write('DATA\n')
 
-            for re_val, im_val in zip(data_dict['real'], data_dict['imag']):
+            for re_val, im_val in zip(data_dict['real'], data_dict['imag'], strict=False):
                 f.write(f'{re_val} {im_val}\n')
 
             f.write('END')

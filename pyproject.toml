@@ -29,7 +29,11 @@ classifiers = [
     "Operating System :: MacOS",
 ]
 requires-python = ">=3.10"
-dependencies = ["numpy", "ase", "pandas", "soprano", "plotly", "PyQt5", "PyQtWebEngine", "csdmpy"]
+dependencies = [
+    "numpy", "ase", "pandas", "soprano", "plotly", "PyQt5", "PyQtWebEngine",
+    "csdmpy",
+    "astropy",  # missing from csdmpy dependency declaration
+]
 
 [project.optional-dependencies]
 dev = ["codecov-cli>=0.4.1", "pytest>=7.4.0", "pytest-cov>=3.0.0", "ruff>=0.0.285"]

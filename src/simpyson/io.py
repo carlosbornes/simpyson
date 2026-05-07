@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
 import warnings
+from pathlib import Path
 
+import csdmpy as csdm
 import numpy as np
 
 from simpyson.simpy import Simpy
@@ -56,7 +57,7 @@ def read_simp(
         if format not in supported_formats:
             raise ValueError(f"Unsupported format {format}")
     else:
-        ext = os.path.splitext(filename)[1].lower()
+        ext = Path(filename).suffix.lower()
         if ext == '.spe':
             format = 'spe'
         elif ext == '.fid':
@@ -102,7 +103,7 @@ def read_spe(filename: str, simpy_data: Simpy) -> None:
     ValueError
         If required header fields (NP, SW) are missing.
     """
-    with open(filename) as f:
+    with Path(filename).open() as f:
         data_sec = False
         real: list[float] = []
         imag: list[float] = []
@@ -161,7 +162,7 @@ def read_fid(filename: str, simpy_data: Simpy) -> None:
     ValueError
         If required header fields (NP, SW) are missing.
     """
-    with open(filename) as f:
+    with Path(filename).open() as f:
         data_sec = False
         real: list[float] = []
         imag: list[float] = []
@@ -204,7 +205,7 @@ def read_xreim(filename: str, simpy_data: Simpy) -> None:
     simpy_data : Simpy
         Object to populate with xreim data.
     """
-    with open(filename) as f:
+    with Path(filename).open() as f:
         time: list[float] = []
         real: list[float] = []
         imag: list[float] = []
@@ -221,8 +222,6 @@ def read_csdf(filename: str, simpy_data: Simpy) -> None:
     """
     Read NMR data from a SIMPSON CSDF file.
 
-    Requires the ``csdmpy`` package to be installed.
-
     Parameters
     ----------
     filename : str
@@ -230,8 +229,6 @@ def read_csdf(filename: str, simpy_data: Simpy) -> None:
     simpy_data : Simpy
         Object to populate with spectrum data.
     """
-    import csdmpy as csdm
-
     data = csdm.load(filename)
     hz = data.dimensions[0].coordinates.value
     real = data.dependent_variables[0].components[0].real
@@ -240,31 +237,3 @@ def read_csdf(filename: str, simpy_data: Simpy) -> None:
     sw = np.abs(hz[-1] - hz[0])
 
     simpy_data.from_csdf(real, imag, hz, np_value, sw)
-
-
-def write_simp(spinsys: str, out_name: str, **kwargs) -> object:
-    """
-    Create a SIMPSON input file with the specified parameters.
-
-    This is a convenience wrapper around ``SimpCalc``. For full control, use
-    ``SimpCalc`` directly from ``simpyson.calculator``.
-
-    Parameters
-    ----------
-    spinsys : str
-        Spin system definition (SIMPSON spinsys block or body).
-    out_name : str
-        Output file name (without extension).
-    **kwargs
-        Additional parameters forwarded to ``SimpCalc`` (e.g.,
-        ``proton_frequency``, ``spin_rate``, ``sw``, ``np``, etc.).
-
-    Returns
-    -------
-    SimpCalc
-        Configured calculator object that can be saved with ``.save(path)``.
-    """
-    # Lazy import to avoid circular dependency (calculator.py -> io.py)
-    from simpyson.calculator import SimpCalc
-
-    return SimpCalc(spinsys=spinsys, out_name=out_name, **kwargs)

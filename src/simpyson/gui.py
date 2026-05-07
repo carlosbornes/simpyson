@@ -1,10 +1,10 @@
 # src/simpyson/gui.py
 from __future__ import annotations
 
-import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 
 import plotly.graph_objects as go
 from PyQt5 import QtWidgets
@@ -227,7 +227,8 @@ class SimpysonGUI(QMainWindow):
             options=options
         )
 
-        if not save_filename: return
+        if not save_filename:
+            return
 
         try:
             format = save_filename.lower().split('.')[-1]
@@ -246,7 +247,7 @@ class SimpysonGUI(QMainWindow):
         for filename in filenames:
             if filename:
                 file_format = filename.split('.')[-1]
-                base_name = os.path.basename(filename)
+                base_name = Path(filename).name
 
                 data = read_simp(filename, format=file_format)
 
@@ -372,8 +373,8 @@ class SimpysonGUI(QMainWindow):
             html_content = re.sub(r':focus-visible\s*\{[^}]*\}', '', html_content)
 
             # Save to temp file and load
-            temp_path = os.path.join(tempfile.gettempdir(), 'simpyson_plot.html')
-            with open(temp_path, 'w', encoding='utf-8') as f:
+            temp_path = Path(tempfile.gettempdir()) / 'simpyson_plot.html'
+            with temp_path.open('w', encoding='utf-8') as f:
                 f.write(html_content)
 
             self.browser.load(QUrl.fromLocalFile(temp_path))
@@ -429,7 +430,8 @@ class SimpysonGUI(QMainWindow):
         self.plot_data(selected_items)
 
     def change_view(self, view):
-        if not (selected_items := self.get_selection()): return
+        if not (selected_items := self.get_selection()):
+            return
 
         if view == 'ppm' and not all(self.has_setup(item.text()) for item in selected_items):
             QMessageBox.warning(self, 'Not Setup', 'B0 and nucleus must be set for PPM view')
@@ -442,7 +444,8 @@ class SimpysonGUI(QMainWindow):
         self.plot_data(selected_items)
 
     def setup_conversions(self):
-        if not (selected_items := self.get_selection()): return
+        if not (selected_items := self.get_selection()):
+            return
 
         dialog = QDialog(self)
         dialog.setWindowTitle('Setup Conversions')

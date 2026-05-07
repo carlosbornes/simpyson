@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import os
@@ -7,8 +8,10 @@ import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from simpyson.converter import ppm2hz
+from simpyson.io import read_simp
 from simpyson.templates import (
     CustomPulseSequence,
     PulseSequenceTemplate,
@@ -160,7 +163,7 @@ class SimpCalc:
                 for param in required_clean:
                     if param in self.parameters:
                         pulseq_params[param] = self.parameters[param]
-                
+
                 # Pass offset if it exists
                 if 'variable_offset' in self.parameters:
                     pulseq_params['offset'] = self.parameters['variable_offset']
@@ -175,9 +178,11 @@ class SimpCalc:
             return pulse_sequence
 
         else:
-            raise ValueError(f"Invalid pulse_sequence type: {type(pulse_sequence)}. "
-                           "Must be a template name (str), a custom string, or " \
-                           "a PulseSequenceTemplate object")
+            raise ValueError(
+                f"Invalid pulse_sequence type: {type(pulse_sequence)}. "
+                "Must be a template name (str), a custom string, or "
+                "a PulseSequenceTemplate object"
+            )
 
     def generate_spinsys(self):
         """
@@ -206,7 +211,7 @@ class SimpCalc:
             if stripped.startswith("spinsys"):
                 # Already a complete block — use as-is
                 pass
-            elif stripped.startswith("channels") or stripped.startswith("nuclei"):
+            elif stripped.startswith(("channels", "nuclei")):
                 # Body only — wrap it
                 spinsys = f"spinsys {{\n{spinsys}\n}}\n"
             else:
@@ -375,12 +380,12 @@ proc main {{}} {{
         filepath : str
             Path to write the ``.in`` / ``.tcl`` file.
         """
-        with open(filepath, 'w') as file:
+        with Path(filepath).open('w') as file:
             file.write(str(self))
 
     def print(self) -> None:
         """Print the SIMPSON input file to the console (stdout)."""
-        print(str(self))
+        print(str(self))  # noqa: T201
 
     def run(
         self,
@@ -438,7 +443,7 @@ proc main {{}} {{
         simpson_executable = None
 
         if simpson_path:
-            if os.path.exists(simpson_path):
+            if Path(simpson_path).exists():
                 simpson_executable = simpson_path
             else:
                 raise FileNotFoundError(f"SIMPSON executable not found at specified path: {simpson_path}")
@@ -458,7 +463,7 @@ proc main {{}} {{
             os.close(temp_fd)
             filepath = temp_file
 
-        base_filepath = os.path.splitext(filepath)[0]
+        base_filepath = str(Path(filepath).with_suffix(''))
 
         self.save(filepath)
 
@@ -477,11 +482,11 @@ proc main {{}} {{
         if out_name == '$par(name)':
             out_name = base_filepath
 
-        output_filename = f"{os.path.basename(out_name)}.{out_format}"
+        output_filename = f"{Path(out_name).name}.{out_format}"
 
         possible_locations = [
-            os.path.join(os.path.dirname(filepath), output_filename),
-            os.path.join(os.getcwd(), output_filename),
+            str(Path(filepath).parent / output_filename),
+            str(Path.cwd() / output_filename),
             f"{out_name}.{out_format}"
         ]
 
@@ -503,12 +508,9 @@ proc main {{}} {{
 
             # Read output from run
             if read_output:
-                # Lazy import to avoid circular dependency (io.py imports SimpCalc)
-                from simpyson.io import read_simp
-
                 output_file = None
                 for location in possible_locations:
-                    if os.path.exists(location):
+                    if Path(location).exists():
                         output_file = location
                         break
 
@@ -528,25 +530,20 @@ proc main {{}} {{
                     nucleus = _extract_nucleus(self.generate_spinsys())
 
                 # Read the output file
-                sim_result = read_simp(output_file, format=out_format, b0=b0, nucleus=nucleus)
-
-                return sim_result
+                return read_simp(output_file, format=out_format, b0=b0, nucleus=nucleus)
             else:
                 return result.stdout
 
         finally:
             if delete_files:
-                if temp_file and os.path.exists(temp_file):
-                    os.remove(temp_file)
-                elif filepath and os.path.exists(filepath):
-                    os.remove(filepath)
+                if temp_file and Path(temp_file).exists():
+                    Path(temp_file).unlink()
+                elif filepath and Path(filepath).exists():
+                    Path(filepath).unlink()
 
                 for location in possible_locations:
-                    if os.path.exists(location):
-                        try:
-                            os.remove(location)
-                        except OSError:
-                            pass
+                    with contextlib.suppress(OSError):
+                        Path(location).unlink(missing_ok=True)
 
 def simulate_spectrum(
     spinsys: str | object,
@@ -622,8 +619,7 @@ def simulate_spectrum(
     except ValueError:
         logger.debug("Could not determine spin for nucleus %s", nucleus)
 
-    # Switch to Inc for quadrupolar nuclei unless the user explicitly set detect_operator.
-    # Inc detects only the central transition (−½ ↔ +½), giving a narrow, interpretable peak.
+    # Switch to Inc (central transition) for quadrupolar nuclei unless the user explicitly set detect_operator.
     if not user_detect_op and spin is not None and spin > 0.5:
         params['detect_operator'] = 'Inc'
 
@@ -639,18 +635,14 @@ def simulate_spectrum(
                 if val_str.endswith('p'):
                     shifts.append(float(val_str[:-1]))
                 else:
-                    try:
+                    with contextlib.suppress(ValueError):
                         shifts.append(float(val_str))
-                    except ValueError:
-                        pass
         elif stripped.startswith('quadrupole'):
             parts = stripped.split()
             # quadrupole site order Cq eta alpha beta gamma
             if len(parts) >= 4:
-                try:
+                with contextlib.suppress(ValueError):
                     quadrupoles.append(abs(float(parts[3])))
-                except ValueError:
-                    pass
 
     spin_rate = params['spin_rate']
 
@@ -669,7 +661,7 @@ def simulate_spectrum(
             nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
             required_sw = max(width_hz * 2, nu_l_hz * 10e-6)
 
-            # SIMPSON offset ADDS to raw positions; negate to center peaks at 0
+            # SIMPSON offset ADDS to raw positions negate to center peaks at 0
             offset_value = -center_hz
             if 'variable_offset' not in kwargs:
                 params['variable_offset'] = offset_value
@@ -680,7 +672,7 @@ def simulate_spectrum(
             max_cq = max(quadrupoles)
             nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
             if params['detect_operator'] == 'Inc':
-                # CT only: 2nd-order broadening width ∝ Cq²/ν_L
+                # CT only 2nd-order broadening widt
                 required_sw = max_cq ** 2 / nu_l_hz
             else:
                 # Full spectrum (Inp): satellite manifold extends to ~|Cq|
