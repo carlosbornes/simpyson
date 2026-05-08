@@ -96,6 +96,11 @@ def _extract_turnoff_interactions(spinsys_str: str) -> list[str]:
     return interactions
 
 
+def _is_ct_operator(detect_op: str) -> bool:
+    """Return True if detect_op selects only the central transition."""
+    return bool(re.search(r'I(?:n|\d+)c', detect_op))
+
+
 class SimpCalc:
     """
     Generator for SIMPSON simulation input files (``.tcl``).
@@ -144,10 +149,14 @@ class SimpCalc:
         self.parameters = kwargs
         self.output_config = {}
 
-        output_keys = ['out_name', 'out_format', 'lb', 'zerofill']
+        output_keys = ['out_name', 'out_format', 'lb', 'zerofill', 'gauss_lb']
         for key in output_keys:
             if key in self.parameters:
                 self.output_config[key.replace('out_', '')] = self.parameters.pop(key)
+
+        #   hz = f_SPE - ref = (d_Hz - OFFSET) - (-OFFSET) = d_Hz
+        if 'variable_offset' in self.parameters and 'variable_ref' not in self.parameters:
+            self.parameters['variable_ref'] = -self.parameters['variable_offset']
 
         self.pulse_sequence = self._setup_pulse_sequence(pulse_sequence)
 
@@ -184,6 +193,14 @@ class SimpCalc:
                 # Pass offset if it exists
                 if 'variable_offset' in self.parameters:
                     pulseq_params['offset'] = self.parameters['variable_offset']
+
+                # Count channels so the template emits the right number of offset args
+                spinsys_str = self.spinsys
+                if hasattr(spinsys_str, 'to_simpson'):
+                    spinsys_str = spinsys_str.to_simpson()
+                channels_match = re.search(r'channels\s+([^\n]+)', str(spinsys_str))
+                if channels_match:
+                    pulseq_params['num_channels'] = len(channels_match.group(1).split())
 
                 # Create template with extracted parameters
                 return get_template(pulse_sequence, **pulseq_params)
@@ -357,11 +374,16 @@ class SimpCalc:
         lb = self.parameters.get('lb',
              self.output_config.get('lb', 20))
 
+        gauss_lb = self.parameters.get('gauss_lb',
+                   self.output_config.get('gauss_lb', 0))
+
         zerofill = self.parameters.get('zerofill',
                   self.output_config.get('zerofill', self.parameters.get('np', 0)))
 
 
         indent = "    "
+
+        gauss_line = f"{indent}faddlb $f {gauss_lb} 1\n" if gauss_lb else ""
 
         if out_format == "fid":
             return f"""
@@ -369,7 +391,7 @@ proc main {{}} {{
 {indent}global par
 {indent}set f [fsimpson]
 {indent}faddlb $f {lb} 0
-{indent}fzerofill $f {zerofill}
+{gauss_line}{indent}fzerofill $f {zerofill}
 {indent}fsave $f {out_name}.fid
 }}
 """
@@ -379,7 +401,7 @@ proc main {{}} {{
 {indent}global par
 {indent}set f [fsimpson]
 {indent}faddlb $f {lb} 0
-{indent}fzerofill $f {zerofill}
+{gauss_line}{indent}fzerofill $f {zerofill}
 {indent}fft $f
 """
             if 'variable_ref' in self.parameters or 'ref' in self.parameters:
@@ -624,8 +646,8 @@ def simulate_spectrum(
         'spin_rate': 30e3,
         'start_operator': 'Inx',
         'detect_operator': 'Inp',
-        'crystal_file': 'rep168',
-        'gamma_angles': 8,
+        'crystal_file': 'rep2000',
+        'gamma_angles': 16,
         'np': 4096,
         'method': 'direct',
         'verbose': 0,
@@ -688,36 +710,33 @@ def simulate_spectrum(
     spin_rate = params['spin_rate']
 
     if 'sw' not in kwargs:
+        nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
+        is_ct = _is_ct_operator(params['detect_operator'])
+
         if shifts:
             min_shift = min(shifts)
             max_shift = max(shifts)
             center_ppm = (min_shift + max_shift) / 2
-
             center_hz = ppm2hz(center_ppm, b0, nucleus)
-            min_hz = ppm2hz(min_shift, b0, nucleus)
-            max_hz = ppm2hz(max_shift, b0, nucleus)
-            width_hz = abs(max_hz - min_hz)
+            width_hz = abs(ppm2hz(max_shift, b0, nucleus) - ppm2hz(min_shift, b0, nucleus))
 
-            # Floor at 10 ppm so a single peak gets a usable window
-            nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
-            required_sw = max(width_hz * 2, nu_l_hz * 10e-6)
+            if quadrupoles and is_ct:
+                # CT width dominated by second-order quadrupolar broadening
+                max_cq = max(quadrupoles)
+                required_sw = max(max_cq ** 2 / nu_l_hz, nu_l_hz * 10e-6)
+            else:
+                # Floor at 10 ppm so a single peak gets a usable window
+                required_sw = max(width_hz * 2, nu_l_hz * 10e-6)
 
-            # SIMPSON offset ADDS to raw positions negate to center peaks at 0
-            offset_value = -center_hz
+            offset_value = center_hz   # positive: shift carrier toward peaks
             if 'variable_offset' not in kwargs:
                 params['variable_offset'] = offset_value
             if 'variable_ref' not in kwargs:
-                params['variable_ref'] = offset_value
+                params['variable_ref'] = -offset_value
 
         elif quadrupoles:
             max_cq = max(quadrupoles)
-            nu_l_hz = get_larmor_freq(b0, nucleus) * 1e6
-            if params['detect_operator'] == 'Inc':
-                # CT only 2nd-order broadening widt
-                required_sw = max_cq ** 2 / nu_l_hz
-            else:
-                # Full spectrum (Inp): satellite manifold extends to ~|Cq|
-                required_sw = 2.5 * max_cq
+            required_sw = max_cq ** 2 / nu_l_hz if is_ct else 2.5 * max_cq
 
         else:
             raise ValueError(

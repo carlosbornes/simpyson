@@ -70,7 +70,8 @@ class NoPulse(PulseSequenceTemplate):
     def get_default_parameters(self) -> dict[str, Any]:
         return {
             'variable_tsw': '1e6/sw',
-            'variable_offset': 0.0
+            'variable_offset': 0.0,
+            'variable_num_channels': 1,
         }
 
     def get_required_parameters(self) -> set[str]:
@@ -81,14 +82,22 @@ class NoPulse(PulseSequenceTemplate):
         return "No pulse, direct acquisition"
 
     def generate_code(self) -> str:
-        return """
-proc pulseq {} {
+        offset_val = self.parameters.get('variable_offset', 0.0)
+        n_chan = int(self.parameters.get('variable_num_channels', 1))
+        if offset_val == 0:
+            offset_line = ""
+        elif n_chan <= 1:
+            offset_line = "    offset $par(offset)\n"
+        else:
+            extra = " 0" * (n_chan - 1)
+            offset_line = f"    offset $par(offset){extra}\n"
+        return f"""
+proc pulseq {{}} {{
     global par
-    offset $par(offset)
-    acq_block {
+{offset_line}    acq_block {{
         delay $par(tsw)
-    }
-}
+    }}
+}}
 """
 
 class Pulse90(PulseSequenceTemplate):

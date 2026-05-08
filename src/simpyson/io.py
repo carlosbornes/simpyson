@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from pathlib import Path
 
 import csdmpy as csdm
@@ -135,11 +134,7 @@ def read_spe(filename: str, simpy_data: Simpy) -> None:
             )
 
         if ref != 0.0:
-            warnings.warn(
-                f"Using REF={ref} Hz from SPE header as frequency offset. "
-                "This assumes ref equals the SIMPSON offset parameter.",
-                stacklevel=2,
-            )
+            logger.debug("Applying REF=%g Hz from SPE header: hz = f_SPE - REF", ref)
         indices = np.arange(np_value)
         hz = sw * (indices / np_value - 0.5) - ref
 
