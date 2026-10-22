@@ -483,11 +483,20 @@ proc main {{}} {{
         Raises
         ------
         FileNotFoundError
-            If SIMPSON is not found in PATH or at the specified path.
+            If SIMPSON is not found in PATH or at the specified path, or if
+            the expected output file was not produced.
         subprocess.TimeoutExpired
             If the simulation exceeds the timeout.
-        subprocess.CalledProcessError
-            If SIMPSON returns a non-zero exit code.
+        RuntimeError
+            If SIMPSON returns a non-zero exit code. The message contains
+            SIMPSON's stdout and stderr.
+
+        Notes
+        -----
+        With ``delete_files=True`` the output file is deleted after the run,
+        so combine ``read_output=False`` with ``delete_files=False`` if you
+        want to keep it. With ``dry_run=True`` the input file is written and
+        kept.
         """
         # Find the SIMPSON executable
         simpson_executable = None
@@ -644,6 +653,12 @@ def simulate_spectrum(
     -------
     Simpy
         Object containing the simulated spectrum.
+
+    Examples
+    --------
+    >>> spinsys = "channels 13C\\nnuclei 13C\\nshift 1 100p 0 0 0 0 0"
+    >>> spectrum = simulate_spectrum(spinsys, spin_rate=10e3, lb=50)
+    >>> spectrum.ppm['ppm']  # chemical shift axis, centred on the peak
     """
     # Defaults
     defaults = {

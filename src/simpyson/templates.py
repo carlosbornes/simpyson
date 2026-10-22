@@ -230,7 +230,38 @@ def get_template(name: str, **kwargs) -> PulseSequenceTemplate:
     return pulseq_templates[name](**kwargs)
 
 class CustomPulseSequence(PulseSequenceTemplate):
-    """Wrapper for custom string pulse sequences"""
+    """
+    Wrapper for a user-written SIMPSON Tcl pulse sequence.
+
+    Created automatically by ``SimpCalc`` when ``pulse_sequence`` is a string
+    that is not a template name.
+
+    Parameters
+    ----------
+    code : str
+        Tcl code of the pulse sequence. Either the body of ``pulseq`` (it is
+        wrapped in ``proc pulseq {} { global par ... }``), or a complete
+        ``proc pulseq`` definition (used as given, so helper procedures can
+        follow it). Values that should be adjustable are written as
+        ``$par(name)`` placeholders.
+    **kwargs
+        Values for the placeholders, with or without the ``variable_`` prefix.
+        Keywords that match no ``$par(name)`` in ``code`` are ignored.
+
+    Raises
+    ------
+    ValueError
+        If ``code`` contains a ``$par(name)`` placeholder for which no value
+        was given.
+
+    Examples
+    --------
+    >>> seq = CustomPulseSequence(
+    ...     "pulse $par(pw) $par(rf) 0\\nacq", pw=2.5, rf=100000, other=1
+    ... )
+    >>> seq.parameters
+    {'variable_pw': 2.5, 'variable_rf': 100000}
+    """
 
     def __init__(self, code: str, **kwargs):
         self.code = code
