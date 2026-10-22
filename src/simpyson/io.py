@@ -158,10 +158,12 @@ def read_csdf(filename: str, simpy_data: Simpy) -> None:
 
     # csdmpy parses the drive letter in Windows paths (C:\...) as a URL scheme
     # and file:// URIs are passed unchanged to open(), so use a relative path
-    try:
-        source = os.path.relpath(filename)
-    except ValueError:  # different drive than the working directory
-        source = str(filename)
+    source = str(filename)
+    if os.name == "nt" and Path(source).drive:
+        try:
+            source = os.path.relpath(os.path.realpath(source))
+        except ValueError:  # different drive than the working directory
+            pass
     data = csdm.load(source)
     hz = data.dimensions[0].coordinates.to("Hz").value
     real = data.dependent_variables[0].components[0].real
