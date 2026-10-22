@@ -35,6 +35,7 @@ Open a Python console and run:
 
 ```python
 import simpyson
+
 print(simpyson.__version__)
 ```
 

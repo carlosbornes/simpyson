@@ -47,7 +47,7 @@ Other modules contain helpers used in the guides: [`read_vasp`][simpyson.convert
 
 ## Graphical interface
 
-Simpyson provides a simple graphical user interface (GUI) for easy interaction with the software. Which is being tested, it can be 
+Simpyson provides a simple graphical user interface (GUI) for easy interaction with the software. Which is being tested, it can be
 accessed via the command line wiht `simpyson gui`. Currently it is not documented.
 """
 

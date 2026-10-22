@@ -14,7 +14,10 @@ Each tab is a complete script. The first two download a small example file from 
     from simpyson import read_simp
 
     # Example file from the simpyson repository; use your own .spe/.fid instead
-    urlretrieve("https://raw.githubusercontent.com/nuts-org/simpyson/main/examples/read/ethanol.spe", "ethanol.spe")
+    urlretrieve(
+        "https://raw.githubusercontent.com/nuts-org/simpyson/main/examples/read/ethanol.spe",
+        "ethanol.spe",
+    )
 
     data = read_simp("ethanol.spe", b0="400MHz", nucleus="1H")
     plt.plot(data.ppm["ppm"], data.ppm["real"])
@@ -39,7 +42,10 @@ Each tab is a complete script. The first two download a small example file from 
     from simpyson import simulate_spectrum
 
     # Example CASTEP file from the simpyson repository; use your own .magres instead
-    urlretrieve("https://raw.githubusercontent.com/nuts-org/simpyson/main/examples/write/ethanol.magres", "ethanol.magres")
+    urlretrieve(
+        "https://raw.githubusercontent.com/nuts-org/simpyson/main/examples/write/ethanol.magres",
+        "ethanol.magres",
+    )
 
     atoms = read("ethanol.magres")
     ch3 = atoms[[3, 4, 5]]  # the three CH3 hydrogens
